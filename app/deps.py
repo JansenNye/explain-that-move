@@ -1,4 +1,4 @@
-import aioredis
+import redis.asyncio as aioredis
 from fastapi import FastAPI
 
 REDIS_URL = "redis://localhost"  
