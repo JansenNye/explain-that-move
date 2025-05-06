@@ -1,67 +1,111 @@
+// src/EvalBar.tsx
 import React from 'react';
 
 interface EvalBarProps {
   scoreCp: number; // Score in centipawns from White's perspective
-  maxDisplayScoreCp?: number; // Max score to cap the visual bar at (e.g., 1000 cp = +10 pawns)
-  barHeight?: string; // Total height of the bar container (e.g., '300px')
+  maxDisplayScoreCp?: number;
+  barHeight?: string;
+  turnColor: 'white' | 'black'; // To help position the text
 }
 
 const EvalBar: React.FC<EvalBarProps> = ({
   scoreCp,
-  maxDisplayScoreCp = 800, // Default cap at +/- 8 pawns for visual scaling
-  barHeight = '100%', // Default to 100% of parent if used in a flex item context
+  maxDisplayScoreCp = 800,
+  barHeight = '100%',
+  turnColor,
 }) => {
-  // Normalize score: positive for White advantage, negative for Black advantage
   const normalizedScore = scoreCp;
-
-  // Calculate the percentage of the bar to fill for White
-  // Clamp the score to the display range for percentage calculation
   const clampedScore = Math.max(-maxDisplayScoreCp, Math.min(maxDisplayScoreCp, normalizedScore));
-
-  // Percentage: 0% means full Black advantage, 50% is equal, 100% is full White advantage
-  // The white part of the bar grows from 0 (full black adv) to 100 (full white adv)
-  // centered around 50 (equal).
-  // So, if score is -maxDisplayScoreCp, whiteHeightPercent = 0
-  // if score is 0, whiteHeightPercent = 50
-  // if score is +maxDisplayScoreCp, whiteHeightPercent = 100
   const whiteHeightPercent = 50 + (clampedScore / maxDisplayScoreCp) * 50;
+
+  // Convert score to pawn units for display, e.g., +1.23 or -0.50
+  // Handle mate scores separately if you have them (e.g., if scoreCp is 10000 for mate)
+  let scoreToDisplay: string;
+  const mateThreshold = 9000; // Assuming scores >= this are mate scores
+
+  if (Math.abs(normalizedScore) >= mateThreshold) {
+    const mateIn = Math.ceil((maxDisplayScoreCp - Math.abs(normalizedScore) / 100) / 100); // Simplified mate-in-X logic
+    scoreToDisplay = `M${Math.abs(10000 - Math.abs(normalizedScore))}`; // e.g. M5 if mate_score is 10000 and score is 9995
+    if (normalizedScore < -mateThreshold) { // Mate for Black
+        scoreToDisplay = `-${scoreToDisplay}`;
+    }
+  } else {
+    scoreToDisplay = (normalizedScore / 100).toFixed(2);
+     if (normalizedScore > 0) {
+        scoreToDisplay = `+${scoreToDisplay}`;
+    }
+  }
+
 
   const whiteStyle: React.CSSProperties = {
     height: `${whiteHeightPercent}%`,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)', // White bar color
+    backgroundColor: 'rgba(240, 240, 240, 0.9)', // Slightly off-white
     width: '100%',
-    transition: 'height 0.3s ease-in-out', // Smooth transition for height changes
+    transition: 'height 0.3s ease-in-out',
     position: 'absolute',
     bottom: 0,
     left: 0,
+    display: 'flex',
+    alignItems: 'flex-end', // For score placement
+    justifyContent: 'center',
   };
 
   const blackStyle: React.CSSProperties = {
     height: `${100 - whiteHeightPercent}%`,
-    backgroundColor: 'rgba(50, 50, 50, 0.8)', // Black bar color
+    backgroundColor: 'rgba(60, 60, 60, 0.9)', // Slightly lighter black
     width: '100%',
     transition: 'height 0.3s ease-in-out',
     position: 'absolute',
     top: 0,
     left: 0,
+    display: 'flex',
+    alignItems: 'flex-start', // For score placement
+    justifyContent: 'center',
   };
 
   const containerStyle: React.CSSProperties = {
-    width: '30px', // Width of the eval bar
+    width: '40px', // Slightly wider to accommodate text better
     height: barHeight,
-    backgroundColor: 'rgba(128, 128, 128, 0.3)', // Background for the container (neutral)
-    position: 'relative', // For absolute positioning of inner white/black bars
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'flex-end', // White bar grows from the bottom
-    borderRadius: '4px',
-    overflow: 'hidden', // Ensures inner bars don't exceed rounded corners
+    backgroundColor: 'rgba(128, 128, 128, 0.2)',
+    position: 'relative',
+    borderRadius: '3px',
+    overflow: 'hidden',
+    fontFamily: 'Arial, sans-serif',
+    fontWeight: 'bold',
+    fontSize: '12px', // Adjust as needed
   };
 
+  // Determine where to show the score text and its color
+  // Show on White's side if White has advantage or it's equal and White's turn
+  // Show on Black's side if Black has advantage or it's equal and Black's turn
+  const showScoreOnWhiteSide = normalizedScore >= 0;
+  const scoreTextStyle: React.CSSProperties = {
+    position: 'absolute',
+    width: '100%',
+    textAlign: 'center',
+    padding: '3px 0', // Small padding
+    color: showScoreOnWhiteSide ? 'black' : 'white', // Text color contrast
+    // Adjust top/bottom based on which side the score is shown
+    ...(showScoreOnWhiteSide
+      ? { bottom: '2px' } // Place at the bottom of the white part (top of the advantage)
+      : { top: '2px' }),  // Place at the top of the black part (bottom of the advantage)
+    pointerEvents: 'none', // So text doesn't interfere with any bar interactions
+    lineHeight: '1',
+  };
+
+
   return (
-    <div style={containerStyle} title={`Evaluation: ${scoreCp / 100}`}>
-      <div style={blackStyle}></div>
-      <div style={whiteStyle}></div>
+    <div style={containerStyle}>
+      <div style={blackStyle}>
+        {!showScoreOnWhiteSide && (
+          <div style={scoreTextStyle}>{scoreToDisplay}</div>
+        )}
+      </div>
+      <div style={whiteStyle}>
+        {showScoreOnWhiteSide && (
+          <div style={scoreTextStyle}>{scoreToDisplay}</div>
+        )}
+      </div>
     </div>
   );
 };
