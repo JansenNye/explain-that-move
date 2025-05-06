@@ -24,10 +24,19 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  /* display: flex;
+  place-items: center; */
   min-width: 320px;
   min-height: 100vh;
+  background-color: #282c34; /* Can set the body's background here too */
+  /* if appContainerStyle doesn't always fill it */
+}
+/* Also ensure React root mount point takes full width/height */
+#root { /* Or whatever your Vite template uses, check index.html */
+  width: 100%;
+  min-height: 100vh; /* if you want your app to always have at least viewport height */
+  display: flex; /* if your appContainerStyle is the root and needs to be a flex item */
+  flex-direction: column; /* if appContainerStyle is a column */
 }
 
 h1 {

@@ -1,4 +1,3 @@
-// src/App.tsx
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import Chessground from "react-chessground";
 import "react-chessground/dist/styles/chessground.css";
@@ -78,35 +77,11 @@ export default function App() {
     return dests;
   }, [chessInstance, fen]);
 
-  const boardSize = '510px'; 
-
-  const appContainerStyle: React.CSSProperties = { /* ... as defined before ... */ 
-    display: 'flex', flexDirection: 'column', minHeight: '100vh', 
-    backgroundColor: '#282c34', color: 'white', 
-    fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
-  };
-  const titleBarStyle: React.CSSProperties = { /* ... as defined before ... */ 
-    backgroundColor: '#20232a', padding: '10px 20px', textAlign: 'center',
-    fontSize: '1.5em', fontWeight: 'bold', boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-    marginBottom: '20px',
-  };
-  const mainContentStyle: React.CSSProperties = { /* ... as defined before ... */ 
-    display: "flex", flexDirection: "row", gap: "16px", 
-    padding: "0 16px 16px 16px", alignItems: "flex-start", 
-    flexGrow: 1, justifyContent: 'center',
-  };
-  const evalBarWrapperStyle: React.CSSProperties = { display: 'flex', height: boardSize };
-  const boardWrapperStyle: React.CSSProperties = { width: boardSize, height: boardSize };
-  const infoPanelStyle: React.CSSProperties = { /* ... as defined before ... */ 
-    width: '280px', marginLeft: '16px', padding: '10px',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '8px',
-  };
-
   // Helper to get data for PrincipalVariationTable
   const getPvTableData = (): { 
-      pvString: string; 
-      initialTurn: 'white' | 'black'; // Be explicit here
-      fullMoveNumber: number; 
+    pvString: string; 
+    initialTurn: 'white' | 'black'; // Be explicit here
+    fullMoveNumber: number; 
   } | null => { // Also type the overall return
     if (!currentEvalData || !currentEvalData.pv) return null;
     
@@ -121,56 +96,143 @@ export default function App() {
   };
 
   const pvTableData = getPvTableData(); // Call the helper
+  const boardSize = '510px'; 
+  const evalBarWidth = '40px'; 
+  const infoPanelWidth = '300px'; 
+  const gapBetweenItems = '20px';
+  
+  const appContainerStyle: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '100vh',
+    backgroundColor: '#282c34',
+    color: 'white',
+    fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
+  };
+
+  const titleBarStyle: React.CSSProperties = {
+    backgroundColor: '#20232a',
+    padding: '15px 20px',
+    textAlign: 'center',
+    fontSize: '1.8em',
+    fontWeight: 'bold',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+    flexShrink: 0,
+  };
+
+  const mainContentAreaStyle: React.CSSProperties = { 
+    // display: 'flex',          // Make this a flex container
+    // justifyContent: 'center', // Center its child (contentLayoutStyle div) horizontally
+    // alignItems: 'flex-start', // Align its child to the top
+    textAlign: 'center',
+    padding: '20px',          
+    flexGrow: 1,              
+    overflowY: 'auto', // Keep scroll for vertical overflow
+    // overflowX: 'auto', // Optional: if the content group can be wider than viewport
+  };
+
+  const contentLayoutStyle: React.CSSProperties = { 
+    display: "inline-flex",      
+    flexDirection: "row", 
+    gap: gapBetweenItems, 
+    alignItems: "flex-start", 
+    // Remove 'margin: 0 auto' as the parent (mainContentAreaStyle) will handle centering
+    // We also don't necessarily need a maxWidth here if the parent is centering it correctly,
+    // but it can be good for very wide screens.
+    // maxWidth: `calc(${evalBarWidth} + ${gapBetweenItems} + ${boardSize} + ${gapBetweenItems} + ${infoPanelWidth})`,
+  };
+  
+  const evalBarWrapperStyle: React.CSSProperties = {
+    display: 'flex', 
+    height: boardSize, 
+    flexShrink: 0, 
+  };
+  
+  const boardWrapperStyle: React.CSSProperties = {
+    width: boardSize,
+    height: boardSize,
+    boxShadow: '0 4px 12px rgba(0,0,0,0.25)', 
+    borderRadius: '4px', 
+    flexShrink: 0, 
+  };
+
+  const infoPanelStyle: React.CSSProperties = {
+    width: infoPanelWidth, 
+    padding: '15px',
+    backgroundColor: 'rgba(40, 44, 52, 0.7)', 
+    borderRadius: '8px',
+    height: boardSize, 
+    display: 'flex',
+    flexDirection: 'column',
+    boxSizing: 'border-box', 
+    flexShrink: 0, 
+    textAlign: 'left',
+  };
+
+  const pvTableContainerStyle: React.CSSProperties = {
+    flexGrow: 1, 
+    overflowY: 'auto', 
+    minHeight: '100px', 
+    textAlign: 'left',
+  };
 
   return (
     <div style={appContainerStyle}>
-      <header style={titleBarStyle}>Explain That Move</header>
-      <main style={mainContentStyle}>
-        <div style={evalBarWrapperStyle}>
-          {currentEvalData ? (
-            <EvalBar 
-              scoreCp={currentEvalData.score_cp} 
-              barHeight="100%" 
-              turnColor={getTurnColor()} 
-            />
-          ) : (
-            <div style={{ width: '40px', height: '100%', backgroundColor: 'rgba(128,128,128,0.1)' }}></div>
-          )}
-        </div>
-        <div style={boardWrapperStyle}>
-          <Chessground
-            fen={fen}
-            orientation="white" 
-            turnColor={getTurnColor()}
-            movable={{
-              free: false,
-              color: getTurnColor(),
-              dests: calcDests(),
-              showDests: true,
-              events: { after: handleMove }
-            }}
-          />
-        </div>
-        <div style={infoPanelStyle}>
-          <h4 style={{ marginTop: '0px', marginBottom: '5px', color: '#ddd', fontWeight: 'normal' }}>Analysis:</h4> {/* Changed to normal weight */}
-          
-          {currentEvalData && pvTableData ? (
-            <PrincipalVariationTable 
-              pvString={pvTableData.pvString}
-              initialTurn={pvTableData.initialTurn}
-              fullMoveNumber={pvTableData.fullMoveNumber}
-            />
-          ) : currentEvalData && currentEvalData.pv ? ( 
-            <p style={{ fontStyle: 'italic', color: '#aaa', marginTop: '10px' }}>PV: {currentEvalData.pv}</p> 
-          ) : (
-            <p>Loading evaluation...</p>
-          )}
+      <header style={titleBarStyle}>
+        Explain That Move
+      </header>
 
-          {currentEvalData?.cached && <p style={{fontSize: '0.8em', color: '#aaa', marginTop: '8px'}}>(Evaluation cached)</p>}
-          <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px' }}>{lastMoveStatus}</p>
-          <p style={{ fontSize: "0.8em", wordBreak: "break-all", marginTop: '10px', color: '#ccc' }}>FEN: {fen}</p>
+      {/* mainContentAreaStyle is now a flex container that will center its direct child */}
+      <div style={mainContentAreaStyle}> 
+        {/* contentLayoutStyle div is the direct child that gets centered */}
+        <div style={contentLayoutStyle}> 
+          <div style={evalBarWrapperStyle}>
+            {currentEvalData ? (
+              <EvalBar 
+                scoreCp={currentEvalData.score_cp} 
+                barHeight="100%" 
+                turnColor={getTurnColor()} 
+              />
+            ) : (
+              <div style={{ width: evalBarWidth, height: '100%', backgroundColor: 'rgba(128,128,128,0.1)' }}></div>
+            )}
+          </div>
+
+          <div style={boardWrapperStyle}>
+            <Chessground
+              fen={fen}
+              orientation="white" 
+              turnColor={getTurnColor()}
+              movable={{
+                free: false,
+                color: getTurnColor(),
+                dests: calcDests(),
+                showDests: true,
+                events: { after: handleMove }
+              }}
+            />
+          </div>
+
+          <div style={infoPanelStyle}>
+            <h4 style={{ marginTop: '0px', marginBottom: '10px', color: '#e0e0e0', fontWeight: '600', borderBottom: '1px solid #444', paddingBottom: '8px' }}>Analysis</h4>
+            <div style={pvTableContainerStyle}>
+              {currentEvalData && pvTableData ? (
+                <PrincipalVariationTable 
+                  pvString={pvTableData.pvString}
+                  initialTurn={pvTableData.initialTurn}
+                  fullMoveNumber={pvTableData.fullMoveNumber}
+                />
+              ) : currentEvalData && currentEvalData.pv ? ( 
+                <p style={{ fontStyle: 'italic', color: '#aaa', marginTop: '10px' }}>PV: {currentEvalData.pv}</p> 
+              ) : (
+                <p>Loading evaluation...</p>
+              )}
+            </div>
+            {currentEvalData?.cached && <p style={{fontSize: '0.8em', color: '#888', marginTop: 'auto', paddingTop: '10px'}}>(Evaluation cached)</p>}
+            <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px' }}>{lastMoveStatus}</p>
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

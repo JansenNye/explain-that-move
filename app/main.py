@@ -36,9 +36,14 @@ async def eval_fen(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    if app.state.redis is None:
+        print("[API /eval] ERROR: Redis client (app.state.redis) is None!")
+        # Handle error: maybe return a 500 or bypass cache
+    else:
+        print(f"[API /eval] Redis client seems to be available: {type(app.state.redis)}")
     redis = app.state.redis
+    
     key = cache_key(fen, depth)
-    print(f"Cache key generated: '{key}'")
 
     # if we have a cached payload, re-attach our lan array
     if (cached := await redis.get(key)):
