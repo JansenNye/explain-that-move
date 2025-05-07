@@ -4,9 +4,9 @@ import "react-chessground/dist/styles/chessground.css";
 import { Chess, type Square, type Move, type PieceSymbol as ChessPieceSymbol, type Color as ChessJsColor, type Piece } from "chess.js";
 import axios from "axios";
 import EvalBar from './EvalBar';
-import PrincipalVariationTable from './PrincipalVariationTable';
+import PrincipalVariationTable from './PrincipalVariationTable'; // Assumes this now includes the title
 import PiecePalette from './PiecePalette';
-import * as Styles from './stylesConstants';
+import * as Styles from './stylesConstants'; // Assumes this has the updated pvTableContainerStyle
 
 const ALL_SQUARES_LIST: Square[] = [
     'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1', 'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2',
@@ -18,22 +18,15 @@ const ALL_SQUARES_LIST: Square[] = [
 interface EvalPayload {
     cached: boolean;
     score_cp: number;
-    pv: string; // Can be a PV string or an error code like "ERROR:NO_SCORE_OR_MATE"
+    pv: string;
 }
 
-// Known error prefixes/strings from the backend PV
 const KNOWN_PV_ERROR_PREFIX = "ERROR:";
-// Specific error strings that might have been used previously (can be phased out if backend standardizes on ERROR: prefix)
 const OTHER_KNOWN_ERROR_PVS = [
-    "(No score from engine)", // From screenshot
-    "(Stockfish error)",
-    "(Stockfish terminated)",
-    "(Stockfish analysis format error)",
-    "(Stockfish engine unavailable)",
-    "(empty PV)", // This might indicate an issue or just a very short/no line
-    "(No PV from engine)"
+    "(No score from engine)", "(Stockfish error)", "(Stockfish terminated)",
+    "(Stockfish analysis format error)", "(Stockfish engine unavailable)",
+    "(empty PV)", "(No PV from engine)"
 ];
-
 
 type ActiveTab = 'start' | 'pgn' | 'setup';
 type BoardOrientation = 'white' | 'black';
@@ -296,56 +289,42 @@ export default function App() {
     const currentActiveFen = currentActiveGameState.fen;
     const currentEvalDataForTab = info[currentActiveFen];
 
-    // Memoize PV data and add an error flag
     const pvTableData = useMemo(() => {
         if (!currentEvalDataForTab || !currentEvalDataForTab.pv) return null;
-        
         const pvString = currentEvalDataForTab.pv;
         const isError = pvString.startsWith(KNOWN_PV_ERROR_PREFIX) || OTHER_KNOWN_ERROR_PVS.includes(pvString);
-
         const boardForPvContext = new Chess(currentActiveFen);
         const turn: 'white' | 'black' = boardForPvContext.turn() === 'w' ? 'white' : 'black';
-        
         return { 
-            pvString: pvString, 
-            initialTurn: turn, 
-            fullMoveNumber: boardForPvContext.moveNumber(),
-            isErrorPv: isError, // Flag to indicate if the PV string is an error
-            // Provide a user-friendly error message based on the pvString
-            errorMessage: isError ? pvString.replace(KNOWN_PV_ERROR_PREFIX, "").replace(/_/g, " ").toLowerCase() : undefined
+            pvString: pvString, initialTurn: turn, fullMoveNumber: boardForPvContext.moveNumber(),
+            isErrorPv: isError, errorMessage: isError ? pvString.replace(KNOWN_PV_ERROR_PREFIX, "").replace(/_/g, " ").toLowerCase() : undefined
         };
     }, [currentEvalDataForTab, currentActiveFen]);
 
-    // Calculate actual PV plies, considering if it's an error string
     const actualPvPlies = useMemo(() => {
         if (pvTableData && pvTableData.pvString && !pvTableData.isErrorPv) {
             return pvTableData.pvString.split(' ').filter(Boolean).length;
         }
-        return 0; // No plies if it's an error or no PV
+        return 0;
     }, [pvTableData]);
 
-    // Determine the message for PV info text
     const pvInfoMessage = useMemo(() => {
         if (pvTableData?.isErrorPv) {
-            // If backend sent a specific error code, make it more readable
             if (pvTableData.pvString === "ERROR:NO_SCORE_OR_MATE") return "Engine could not determine a score or mate.";
             if (pvTableData.pvString === "ERROR:PV_EMPTY") return "Engine returned an empty principal variation.";
             if (pvTableData.pvString === "ERROR:ENGINE_UNAVAILABLE") return "Analysis engine is unavailable.";
-            // Fallback for other ERROR: codes or older string errors
             return `Analysis error: ${pvTableData.errorMessage || pvTableData.pvString}.`;
         }
         if (currentEvalDataForTab && actualPvPlies > 0 && actualPvPlies < pvDisplayLength) {
             return `Displaying ${actualPvPlies} ${actualPvPlies === 1 ? 'ply' : 'plies'}. (Engine PV has ${actualPvPlies} at current depth).`;
         }
         if (currentEvalDataForTab && actualPvPlies === 0 && !isLoadingEval && pvDisplayLength > 0) {
-             // This case implies a valid (but empty) PV was received, or an error string not caught by isErrorPv
             if (OTHER_KNOWN_ERROR_PVS.includes(currentEvalDataForTab.pv) || currentEvalDataForTab.pv.startsWith(KNOWN_PV_ERROR_PREFIX)){
-                 // Already handled by isErrorPv, but as a safeguard
                  return `Analysis error: ${currentEvalDataForTab.pv.replace(KNOWN_PV_ERROR_PREFIX, "").replace(/_/g, " ").toLowerCase()}.`;
             }
             return "Engine returned no variation at this depth.";
         }
-        return null; // No message needed
+        return null; 
     }, [pvTableData, actualPvPlies, pvDisplayLength, currentEvalDataForTab, isLoadingEval]);
 
 
@@ -367,11 +346,13 @@ export default function App() {
                     <div style={Styles.evalBarWrapperStyle}> {activeTabInternal !== 'setup' ? ( <EvalBar scoreCp={currentEvalDataForTab?.score_cp ?? null} isLoading={isLoadingEval} barHeight="100%" boardOrientation={boardOrientation} /> ) : ( <div style={{ width: Styles.EVAL_BAR_WIDTH, height: '100%', backgroundColor: 'transparent' }} /> )} </div>
                     {/* Chessboard */}
                     <div style={Styles.boardWrapperStyle}> <Chessground fen={activeTabInternal === 'setup' ? tabGameStates.setup.fen : currentActiveFen} key={activeTabInternal === 'setup' ? `setup-${tabGameStates.setup.fen}-${isWhiteToMoveSetup}` : `${activeTabInternal}-${currentActiveFen}-${boardOrientation}`} orientation={boardOrientation} turnColor={getTurnColor()} movable={ activeTabInternal === 'setup' ? { free: false, color: 'both', dests: calcDests(), showDests: true, events: { drop: (orig: Square, dest: Square) => { handleSetupPieceDrag(orig, dest); }}, rookCastle: false, } : { free: false, color: getTurnColor(), dests: calcDests(), showDests: true, events: { after: handleMove } }} onSelect={ activeTabInternal === 'setup' ? (square: Square) => handleSetupSquareInteract(square) : undefined } highlight={{ lastMove: activeTabInternal === 'setup' ? false : true, check: activeTabInternal === 'setup' ? false : true }} premovable={{ enabled: activeTabInternal === 'setup' ? false : true }} /> </div>
+                    
                     {/* Info Panel */}
                     <div style={Styles.infoPanelStyle}>
-                        <h4 style={{ ...Styles.panelHeaderStyle, marginBottom: '10px' }}>Analysis</h4>
+                        <h4 style={Styles.panelHeaderStyle}>Analysis</h4> 
+                        
+                        {/* PV Table Container (with border) */}
                         <div style={Styles.pvTableContainerStyle}>
-                            {/* Conditionally render PV Table or an error message */}
                             {currentEvalDataForTab && pvTableData && activeTabInternal !== 'setup' && !pvTableData.isErrorPv ? (
                                 <PrincipalVariationTable
                                     pvString={pvTableData.pvString}
@@ -380,21 +361,28 @@ export default function App() {
                                     pvDisplayLength={pvDisplayLength}
                                 />
                             ) : pvTableData?.isErrorPv && activeTabInternal !== 'setup' ? (
-                                <p style={Styles.pvInfoTextStyle}> {/* Use pvInfoTextStyle for consistency */}
+                                // Display error inside the table container if PV is an error
+                                <p style={{...Styles.pvInfoTextStyle, marginTop: '5px', padding: '5px'}}> 
                                     {pvInfoMessage || "Error in analysis."}
                                 </p>
-                            ) : ( activeTabInternal !== 'setup' ? <p>{isLoadingEval ? "Loading evaluation..." : "No evaluation yet."}</p> : <p>Set up a position to analyze.</p> )}
+                            ) : ( activeTabInternal !== 'setup' ? <p style={{padding: '5px'}}>{isLoadingEval ? "Loading evaluation..." : "No evaluation yet."}</p> : <p style={{padding: '5px'}}>Set up a position to analyze.</p> )}
                         </div>
                         
-                        {/* Informational text about PV length (only if not an error and relevant) */}
-                        {pvInfoMessage && !pvTableData?.isErrorPv && activeTabInternal !== 'setup' && (
-                             <p style={Styles.pvInfoTextStyle}>{pvInfoMessage}</p>
-                        )}
-
-
-                        <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px', flexShrink: 0 }}>{lastMoveStatus}</p>
+                        {/* Status Message Area (below table, above controls) */}
+                        <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px', marginBottom: '5px', flexShrink: 0, textAlign: 'center' }}>{lastMoveStatus}</p>
                         
+                        {/* Container for Controls Area (Info Text + Inputs + Buttons) */}
                         <div style={Styles.analysisControlsContainerStyle}>
+                            {/* Informational text about PV length (now above inputs) */}
+                             {pvInfoMessage && !pvTableData?.isErrorPv && activeTabInternal !== 'setup' && (
+                                <p style={Styles.pvInfoTextStyle}>{pvInfoMessage}</p>
+                             )}
+                             {/* Placeholder to maintain height if no message */}
+                             {(!pvInfoMessage || pvTableData?.isErrorPv || activeTabInternal === 'setup') && (
+                                 <p style={{...Styles.pvInfoTextStyle, visibility: 'hidden'}}>Placeholder</p>
+                             )}
+
+                            {/* Input Controls Row */}
                             <div style={Styles.analysisInputRowStyle}>
                                 <div style={Styles.singleInputControlStyle}>
                                     <label htmlFor="analysis-depth" style={Styles.inputControlLabelStyle}>Analysis Depth:</label>
@@ -405,6 +393,7 @@ export default function App() {
                                     <input type="number" id="pv-display-length" value={pvDisplayLength} onChange={handlePvDisplayLengthChange} min="1" max="20" style={Styles.numberInputStyle} />
                                 </div>
                             </div>
+                            {/* Button Row */}
                             <div style={Styles.analysisButtonRowStyle}>
                                 <button onClick={handleFlipBoard} style={{...Styles.analysisButtonStyle, backgroundColor: Styles.COLORS.accentSecondary}}>Flip Board</button>
                                 <button onClick={resetBoard} style={{...Styles.analysisButtonStyle, backgroundColor: Styles.COLORS.accentRed}}>Reset Board</button>

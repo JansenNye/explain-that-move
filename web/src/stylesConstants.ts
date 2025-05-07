@@ -13,7 +13,6 @@ export const BOARD_ANALYSIS_GAP = '35px';
 export const PGN_TITLE_BOTTOM_MARGIN = '12px';
 export const PGN_SECTION_VERTICAL_MARGIN = '10px';
 
-
 // --- COLOR PALETTE ---
 export const COLORS = {
     backgroundMain: '#4A505A',
@@ -38,7 +37,7 @@ export const COLORS = {
 };
 
 // --- STYLE OBJECTS ---
-// ... (all your existing styles up to panelHeaderStyle) ...
+// ... (Keep all styles from appContainerStyle down to setupControlsContainerStyle the same) ...
 export const appContainerStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: COLORS.backgroundMain, color: COLORS.textPrimary, fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif' };
 export const titleBarStyle: React.CSSProperties = { backgroundColor: COLORS.backgroundDarker, padding: '15px 20px', textAlign: 'center', fontSize: '1.8em', fontWeight: 'bold', boxShadow: '0 2px 4px rgba(0,0,0,0.3)', flexShrink: 0 };
 export const tabsControlAreaStyle: React.CSSProperties = { padding: '10px 20px', backgroundColor: COLORS.backgroundDarkMid, display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'center', borderBottom: `1px solid ${COLORS.borderDark}`, flexWrap: 'wrap' };
@@ -68,47 +67,63 @@ export const turnSwitchLabelStyle: React.CSSProperties = { fontWeight: 'normal',
 export const turnSwitchActiveLabelStyle: React.CSSProperties = { ...turnSwitchLabelStyle, fontWeight: 'bold', color: COLORS.textPrimary };
 
 
+// Style for the container holding the PV table
 export const pvTableContainerStyle: React.CSSProperties = {
-    flexGrow: 1,
-    overflowY: 'auto',
-    minHeight: '100px', // Ensure it has some height
+    flexGrow: 1, // Allow it to take available space initially
+    flexShrink: 1, // Allow it to shrink if needed
+    overflowY: 'auto', // Allow scrolling if PV is long
+    minHeight: '50px', // Minimum height to prevent collapse
+    maxHeight: '150px', // MODIFIED: Limit height (approx. 3 rows + header + padding)
     textAlign: 'left',
-    // marginBottom: '5px', // Reduced margin if info text goes below
+    marginBottom: '10px',
+    border: `1px solid ${COLORS.borderDark}`,
+    borderRadius: '4px',
+    padding: '8px',
+    backgroundColor: COLORS.backgroundDarkMid,
+    // Add transition for smoother size changes if needed
+    // transition: 'max-height 0.3s ease-in-out',
 };
 
-// NEW STYLE for the informational text about PV length
+// Style for the informational text about PV length
 export const pvInfoTextStyle: React.CSSProperties = {
   fontSize: '0.8em',
   color: COLORS.textSecondary,
   fontStyle: 'italic',
-  marginTop: '5px', // Space above this text if it's below the table
-  marginBottom: '10px', // Space below this text before the status message
+  marginTop: '0px',
+  marginBottom: '10px',
   textAlign: 'left',
-  paddingLeft: '2px', // Slight indent to align with table-like content
+  paddingLeft: '2px',
+  minHeight: '1.2em', // Keep placeholder height consistent
 };
 
-export const panelHeaderStyle: React.CSSProperties = { marginTop: 0, marginBottom: '0px', color: COLORS.textPrimary, fontSize: '1.0em', fontWeight: '600', borderBottom: `1px solid ${COLORS.borderLight}`, paddingBottom: '6px', textAlign: 'left' };
+// Style for the main analysis panel header (e.g., "Analysis")
+export const panelHeaderStyle: React.CSSProperties = { marginTop: 0, marginBottom: '10px', color: COLORS.textPrimary, fontSize: '1.1em', fontWeight: 'bold', borderBottom: `1px solid ${COLORS.borderDark}`, paddingBottom: '6px', textAlign: 'center' };
 
 
+// Style for the container holding all controls at the bottom
 export const analysisControlsContainerStyle: React.CSSProperties = {
     marginTop: 'auto',
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
+    paddingTop: '10px',
+    borderTop: `1px solid ${COLORS.borderDark}`
 };
 
+// Style for the row containing the two input control boxes
 export const analysisInputRowStyle: React.CSSProperties = {
     display: 'flex',
     gap: '10px',
     justifyContent: 'space-between',
 };
 
+// Style for each individual input control box (Depth, PV Length)
 export const singleInputControlStyle: React.CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     gap: '6px',
-    padding: '10px 12px',
+    padding: '8px 10px',
     backgroundColor: COLORS.backgroundInput,
     borderRadius: '6px',
     border: `1px solid ${COLORS.borderLight}`,
@@ -116,6 +131,7 @@ export const singleInputControlStyle: React.CSSProperties = {
     flexBasis: 0,
 };
 
+// Style for the labels above the input fields
 export const inputControlLabelStyle: React.CSSProperties = {
     color: COLORS.textSecondary,
     fontSize: '0.85em',
@@ -124,6 +140,7 @@ export const inputControlLabelStyle: React.CSSProperties = {
     textAlign: 'center',
 };
 
+// Style for the number input fields
 export const numberInputStyle: React.CSSProperties = {
     width: 'calc(100% - 16px)',
     padding: '5px 8px',
@@ -138,12 +155,14 @@ export const numberInputStyle: React.CSSProperties = {
     boxSizing: 'border-box',
 };
 
+// Style for the row containing the action buttons
 export const analysisButtonRowStyle: React.CSSProperties = {
     display: 'flex',
     gap: '10px',
     justifyContent: 'space-between',
 };
 
+// Style for individual analysis action buttons
 export const analysisButtonStyle: React.CSSProperties = {
     ...genericButtonStyle,
     flexGrow: 1,
