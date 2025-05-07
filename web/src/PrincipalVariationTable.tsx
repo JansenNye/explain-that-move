@@ -24,6 +24,7 @@ const pvTableTitleStyle: React.CSSProperties = {
     fontSize: '0.95em',
     borderBottom: '1px solid #444', // Separator line below title
     paddingBottom: '4px',
+    textAlign: 'center',
 };
 
 

@@ -4,9 +4,9 @@ import "react-chessground/dist/styles/chessground.css";
 import { Chess, type Square, type Move, type PieceSymbol as ChessPieceSymbol, type Color as ChessJsColor, type Piece } from "chess.js";
 import axios from "axios";
 import EvalBar from './EvalBar';
-import PrincipalVariationTable from './PrincipalVariationTable'; // Assumes this now includes the title
+import PrincipalVariationTable from './PrincipalVariationTable';
 import PiecePalette from './PiecePalette';
-import * as Styles from './stylesConstants'; // Assumes this has the updated pvTableContainerStyle
+import * as Styles from './stylesConstants'; // Assumes styles_constants_tsx_updated_17 is used
 
 const ALL_SQUARES_LIST: Square[] = [
     'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1', 'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2',
@@ -92,22 +92,26 @@ export default function App() {
     const setActiveTab = useCallback((tab: ActiveTab) => {
         setLastMoveStatus("");
         if (activeTabInternal === 'pgn' && tab !== 'pgn') {
-            setPgnInput(""); setUploadedFileContent(null); setUploadedFileName(null);
-            if (fileInputRef.current) fileInputRef.current.value = "";
+             setPgnInput(""); setUploadedFileContent(null); setUploadedFileName(null);
+             if (fileInputRef.current) fileInputRef.current.value = "";
         }
-        if (tab !== 'setup') setSelectedPalettePieceCode(null);
+        if (activeTabInternal === 'setup' && tab !== 'setup') {
+            setSelectedPalettePieceCode(null);
+        }
         setActiveTabInternalState(tab);
         setIsLoadingEval(false);
     }, [activeTabInternal]);
 
     useEffect(() => {
-        const currentFenForEffect = tabGameStates[activeTabInternal].fen;
-        if (!currentFenForEffect || activeTabInternal === 'setup') {
-            if (activeTabInternal === 'setup') {
-                setInfo(prev => { const newInfo = {...prev}; delete newInfo[currentFenForEffect]; return newInfo; });
-            }
-            setIsLoadingEval(false); return;
+        const currentFenForEffect = tabGameStates.start.fen; // Always analyze the 'start' tab FEN
+        if (!currentFenForEffect) {
+             setIsLoadingEval(false); return;
         }
+        // Don't fetch if setup tab is active (no analysis needed)
+        if (activeTabInternal === 'setup') {
+             setIsLoadingEval(false); return;
+        }
+
         let isMounted = true;
         const fetchEvalForFen = async (fenToEvaluate: string, depthToUse: number) => {
             if (!isMounted) return;
@@ -128,18 +132,25 @@ export default function App() {
         };
         fetchEvalForFen(currentFenForEffect, analysisDepth);
         return () => { isMounted = false; };
-    }, [tabGameStates, activeTabInternal, analysisDepth]);
+    }, [tabGameStates.start.fen, analysisDepth, activeTabInternal]); // Re-fetch if start FEN changes, depth changes, or tab changes (to avoid fetching on setup)
 
     const handleMove = useCallback((from: Square, to: Square) => {
         setLastMoveStatus("");
-        const currentBoardFen = tabGameStates[activeTabInternal].fen;
+        // Only allow moves if the 'start' tab is active
+        if (activeTabInternal !== 'start') return;
+
+        const currentBoardFen = tabGameStates.start.fen;
         const boardForMove = new Chess(currentBoardFen);
         const moveResult = boardForMove.move({ from, to, promotion: "q" });
         if (moveResult !== null) {
             const newFen = boardForMove.fen();
-            setTabGameStates(prevStates => ({ ...prevStates, [activeTabInternal]: { instance: boardForMove, fen: newFen }}));
+            // Update only the 'start' tab state
+            setTabGameStates(prevStates => ({
+                ...prevStates,
+                start: { instance: boardForMove, fen: newFen }
+            }));
         }
-    }, [activeTabInternal, tabGameStates]);
+    }, [activeTabInternal, tabGameStates.start.fen]); // Dependencies
 
     const loadPgn = useCallback((pgnString: string, source: 'file' | 'text' = 'text') => {
         if (!pgnString || !pgnString.trim()) { setLastMoveStatus("PGN input is empty."); return; }
@@ -151,10 +162,14 @@ export default function App() {
             const headers = newChessInstance.header();
             const isSuccessfullyLoaded = history.length > 0 || currentFenAfterLoad !== new Chess().fen() || (Object.keys(headers).length > 0 && pgnString.toLowerCase().includes('[event '));
             if (!isSuccessfullyLoaded) { setLastMoveStatus(`Failed to load PGN from ${source}. Invalid PGN or empty game.`); return; }
-            setTabGameStates(prevStates => ({ ...prevStates, pgn: { instance: newChessInstance, fen: currentFenAfterLoad } }));
+            setTabGameStates(prevStates => ({
+                 ...prevStates,
+                 start: { instance: newChessInstance, fen: currentFenAfterLoad },
+                 pgn: initialGameState(),
+            }));
             setPgnInput(""); setUploadedFileContent(null); setUploadedFileName(null);
             if (fileInputRef.current) fileInputRef.current.value = "";
-            setActiveTab('pgn');
+            setActiveTab('start');
         } catch (error: any) { console.error(`Error loading PGN from ${source}:`, error); setLastMoveStatus(`Error loading PGN: ${error.message || 'Invalid format'}`); }
     }, [setActiveTab]);
 
@@ -184,6 +199,8 @@ export default function App() {
     const handlePalettePieceSelect = useCallback((pieceCode: string) => setSelectedPalettePieceCode(prev => prev === pieceCode ? null : pieceCode), []);
 
     const handleSetupSquareInteract = useCallback((square: Square) => {
+        // Interaction should happen on the setup board representation if active
+        if (activeTabInternal !== 'setup') return;
         const currentSetupFen = tabGameStates.setup.fen;
         const board = new Chess(currentSetupFen);
         if (selectedPalettePieceCode) {
@@ -195,10 +212,11 @@ export default function App() {
             }
             updateSetupBoardFen(board, isWhiteToMoveSetup);
         }
-    }, [selectedPalettePieceCode, tabGameStates.setup.fen, isWhiteToMoveSetup, updateSetupBoardFen]);
+    }, [activeTabInternal, selectedPalettePieceCode, tabGameStates.setup.fen, isWhiteToMoveSetup, updateSetupBoardFen]);
 
     const handleSetupPieceDrag = useCallback((from: Square, to: Square) => {
-        if (selectedPalettePieceCode) return;
+        // Dragging should happen on the setup board representation if active
+        if (activeTabInternal !== 'setup' || selectedPalettePieceCode) return;
         const currentSetupFen = tabGameStates.setup.fen;
         const board = new Chess(currentSetupFen);
         const pieceOnFrom = board.get(from);
@@ -207,7 +225,8 @@ export default function App() {
             board.put({ type: pieceOnFrom.type, color: pieceOnFrom.color }, to);
             updateSetupBoardFen(board, isWhiteToMoveSetup);
         }
-    }, [selectedPalettePieceCode, tabGameStates.setup.fen, isWhiteToMoveSetup, updateSetupBoardFen]);
+    }, [activeTabInternal, selectedPalettePieceCode, tabGameStates.setup.fen, isWhiteToMoveSetup, updateSetupBoardFen]);
+
 
     const toggleSetupTurn = useCallback(() => {
         const newTurn = !isWhiteToMoveSetup;
@@ -228,47 +247,53 @@ export default function App() {
         const fenToLoad = tabGameStates.setup.fen;
         try {
             const analysisChess = new Chess(fenToLoad);
-            setTabGameStates(prev => ({ ...prev, start: { instance: analysisChess, fen: fenToLoad } }));
+            setTabGameStates(prev => ({
+                ...prev,
+                start: { instance: analysisChess, fen: fenToLoad },
+            }));
             setActiveTab('start');
         } catch (e) { console.error("Invalid FEN from setup:", fenToLoad, e); setLastMoveStatus("Cannot load invalid FEN from setup for analysis."); }
     }, [tabGameStates.setup.fen, setActiveTab]);
 
     const resetBoard = useCallback(() => {
-        if (activeTabInternal === 'setup') clearSetupBoard();
-        else {
-            const currentTabInitialState = initialGameState();
-            setTabGameStates(prevStates => ({ ...prevStates, [activeTabInternal]: currentTabInitialState }));
-        }
-        if (activeTabInternal === 'pgn') {
-            setPgnInput(""); setUploadedFileContent(null); setUploadedFileName(null);
-            if (fileInputRef.current) fileInputRef.current.value = "";
-        }
+        setTabGameStates(prev => ({
+            ...prev,
+            start: initialGameState(),
+        }));
+        setPgnInput(""); setUploadedFileContent(null); setUploadedFileName(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        setSelectedPalettePieceCode(null);
         setLastMoveStatus("");
-    }, [activeTabInternal, clearSetupBoard]);
+        if (activeTabInternal !== 'start') {
+            setActiveTab('start');
+        }
+    }, [activeTabInternal, setActiveTab]);
 
     const getTurnColor = useCallback((): 'white' | 'black' => {
-        if (activeTabInternal === 'setup') return isWhiteToMoveSetup ? 'white' : 'black';
-        const tempBoard = new Chess(tabGameStates[activeTabInternal].fen);
+        // Use 'start' tab state for interaction color
+        const tempBoard = new Chess(tabGameStates.start.fen);
         return tempBoard.turn() === "w" ? "white" : "black";
-    }, [tabGameStates, activeTabInternal, isWhiteToMoveSetup]);
+    }, [tabGameStates.start.fen]);
 
     const calcDests = useCallback(() => {
         const dests = new Map<Square, Square[]>();
-        if (activeTabInternal === 'setup') {
-            const boardInstance = new Chess(tabGameStates.setup.fen);
-            ALL_SQUARES_LIST.forEach(s => { if (boardInstance.get(s)) dests.set(s, ALL_SQUARES_LIST.filter(sq => sq !== s)); });
-            return dests;
+        // Calculate dests only for the 'start' tab board where moves are made
+        if (activeTabInternal === 'start') {
+             const tempBoard = new Chess(tabGameStates.start.fen);
+             ALL_SQUARES_LIST.forEach(s => {
+                 const piece = tempBoard.get(s);
+                 if (piece && piece.color === tempBoard.turn()) {
+                     const moves = tempBoard.moves({ square: s, verbose: true }) as Move[];
+                     if (moves.length > 0) dests.set(s, moves.map(m => m.to));
+                 }
+             });
+        } else if (activeTabInternal === 'setup') {
+             // Allow dragging any piece anywhere in setup mode (visual only)
+             const boardInstance = new Chess(tabGameStates.setup.fen);
+             ALL_SQUARES_LIST.forEach(s => { if (boardInstance.get(s)) dests.set(s, ALL_SQUARES_LIST.filter(sq => sq !== s)); });
         }
-        const tempBoard = new Chess(tabGameStates[activeTabInternal].fen);
-        ALL_SQUARES_LIST.forEach(s => {
-            const piece = tempBoard.get(s);
-            if (piece && piece.color === tempBoard.turn()) {
-                const moves = tempBoard.moves({ square: s, verbose: true }) as Move[];
-                if (moves.length > 0) dests.set(s, moves.map(m => m.to));
-            }
-        });
         return dests;
-    }, [tabGameStates, activeTabInternal]);
+    }, [tabGameStates.start.fen, tabGameStates.setup.fen, activeTabInternal]); // Depend on relevant states
 
     const handleFlipBoard = useCallback(() => setBoardOrientation(prev => prev === 'white' ? 'black' : 'white'), []);
     const handleDepthChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -285,21 +310,21 @@ export default function App() {
         setPvDisplayLength(newLength);
     }, []);
 
-    const currentActiveGameState = tabGameStates[activeTabInternal];
-    const currentActiveFen = currentActiveGameState.fen;
-    const currentEvalDataForTab = info[currentActiveFen];
+    // Always use the 'start' tab's state for display and analysis data
+    const currentDisplayFen = tabGameStates.start.fen;
+    const currentEvalData = info[currentDisplayFen];
 
     const pvTableData = useMemo(() => {
-        if (!currentEvalDataForTab || !currentEvalDataForTab.pv) return null;
-        const pvString = currentEvalDataForTab.pv;
+        if (!currentEvalData || !currentEvalData.pv) return null;
+        const pvString = currentEvalData.pv;
         const isError = pvString.startsWith(KNOWN_PV_ERROR_PREFIX) || OTHER_KNOWN_ERROR_PVS.includes(pvString);
-        const boardForPvContext = new Chess(currentActiveFen);
+        const boardForPvContext = new Chess(currentDisplayFen);
         const turn: 'white' | 'black' = boardForPvContext.turn() === 'w' ? 'white' : 'black';
-        return { 
+        return {
             pvString: pvString, initialTurn: turn, fullMoveNumber: boardForPvContext.moveNumber(),
             isErrorPv: isError, errorMessage: isError ? pvString.replace(KNOWN_PV_ERROR_PREFIX, "").replace(/_/g, " ").toLowerCase() : undefined
         };
-    }, [currentEvalDataForTab, currentActiveFen]);
+    }, [currentEvalData, currentDisplayFen]);
 
     const actualPvPlies = useMemo(() => {
         if (pvTableData && pvTableData.pvString && !pvTableData.isErrorPv) {
@@ -315,93 +340,138 @@ export default function App() {
             if (pvTableData.pvString === "ERROR:ENGINE_UNAVAILABLE") return "Analysis engine is unavailable.";
             return `Analysis error: ${pvTableData.errorMessage || pvTableData.pvString}.`;
         }
-        if (currentEvalDataForTab && actualPvPlies > 0 && actualPvPlies < pvDisplayLength) {
+        if (currentEvalData && actualPvPlies > 0 && actualPvPlies < pvDisplayLength) {
             return `Displaying ${actualPvPlies} ${actualPvPlies === 1 ? 'ply' : 'plies'}. (Engine PV has ${actualPvPlies} at current depth).`;
         }
-        if (currentEvalDataForTab && actualPvPlies === 0 && !isLoadingEval && pvDisplayLength > 0) {
-            if (OTHER_KNOWN_ERROR_PVS.includes(currentEvalDataForTab.pv) || currentEvalDataForTab.pv.startsWith(KNOWN_PV_ERROR_PREFIX)){
-                 return `Analysis error: ${currentEvalDataForTab.pv.replace(KNOWN_PV_ERROR_PREFIX, "").replace(/_/g, " ").toLowerCase()}.`;
+        if (currentEvalData && actualPvPlies === 0 && !isLoadingEval && pvDisplayLength > 0) {
+            if (OTHER_KNOWN_ERROR_PVS.includes(currentEvalData.pv) || currentEvalData.pv.startsWith(KNOWN_PV_ERROR_PREFIX)){
+                 return `Analysis error: ${currentEvalData.pv.replace(KNOWN_PV_ERROR_PREFIX, "").replace(/_/g, " ").toLowerCase()}.`;
             }
             return "Engine returned no variation at this depth.";
         }
-        return null; 
-    }, [pvTableData, actualPvPlies, pvDisplayLength, currentEvalDataForTab, isLoadingEval]);
+        return null;
+    }, [pvTableData, actualPvPlies, pvDisplayLength, currentEvalData, isLoadingEval]);
 
+    // Determine which board FEN to display in Chessground based on active tab
+    const chessgroundFen = activeTabInternal === 'setup' ? tabGameStates.setup.fen : currentDisplayFen;
 
     return (
         <div style={Styles.appContainerStyle}>
             <header style={Styles.titleBarStyle}>Explain That Move</header>
-            <div style={Styles.tabsControlAreaStyle}>
-                <button onClick={() => setActiveTab('start')} style={activeTabInternal === 'start' ? Styles.activeTabButtonStyle : Styles.tabButtonStyle}>Starting Position</button>
-                <button onClick={() => setActiveTab('pgn')} style={activeTabInternal === 'pgn' ? Styles.activeTabButtonStyle : Styles.tabButtonStyle}>Upload PGN</button>
-                <button onClick={() => setActiveTab('setup')} style={activeTabInternal === 'setup' ? Styles.activeTabButtonStyle : Styles.tabButtonStyle}>Set Up Position</button>
-            </div>
-            <div style={Styles.mainContentAreaStyle}>
-                <div style={Styles.contentLayoutStyle}>
-                    {/* PGN Input Panel */}
-                    {activeTabInternal === 'pgn' && ( <div style={Styles.pgnInputPanelOuterStyle}> <h4 style={Styles.panelMainTitleStyle}>Provide PGN</h4> <div style={{...Styles.pgnSectionBoxStyle, flexShrink: 0 }}> <h5 style={Styles.panelHeaderStyle}>Upload File</h5> <label htmlFor="pgn-file-input" style={Styles.fileInputLabelStyle}>Choose PGN File</label> <input id="pgn-file-input" type="file" accept=".pgn,.txt" onChange={handleFileSelect} ref={fileInputRef} style={Styles.fileInputStyle} /> <div style={Styles.fileNameDisplayStyle}>{uploadedFileName ? `Selected: ${uploadedFileName}` : "No file selected."}</div> <button onClick={handleLoadSelectedFile} disabled={!uploadedFileContent} style={uploadedFileContent ? Styles.loadButtonStyleActive : Styles.loadButtonStyleDisabled} onMouseEnter={e => { if (uploadedFileContent) (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackgroundHover);}} onMouseLeave={e => { if (uploadedFileContent) (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackground);}}>Load to Board</button> </div> <div style={Styles.orSeparatorStyle}>OR</div> <div style={{...Styles.pgnSectionBoxStyle, flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}> <h5 style={{...Styles.panelHeaderStyle, flexShrink: 0}}>Paste Text</h5> <textarea id="pgn-textarea" value={pgnInput} onChange={handlePgnInputChange} placeholder={'[Event "Example"]\n1. e4 e5 2. Nf3 Nc6 *'} style={Styles.textAreaStyle} /> <button onClick={handleSubmitPgnText} style={Styles.loadButtonStyleActive} onMouseEnter={e => (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackgroundHover)} onMouseLeave={e => (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackground)}>Load to Board</button> </div> </div> )}
-                    {/* Setup Panel */}
-                    {activeTabInternal === 'setup' && ( <div style={Styles.setupPanelOuterStyle}> <div> <h4 style={{...Styles.panelMainTitleStyle, marginBottom: '15px'}}>Set Up Position</h4> <div style={Styles.piecePaletteContainerStyle}> <PiecePalette onSelectPiece={handlePalettePieceSelect} selectedPiece={selectedPalettePieceCode} /> </div> </div> <div style={Styles.setupControlsContainerStyle}> <div style={Styles.turnSwitchOuterStyle}> <span onClick={toggleSetupTurn} style={isWhiteToMoveSetup ? Styles.turnSwitchActiveLabelStyle : Styles.turnSwitchLabelStyle}>White to move</span> <span style={{color: Styles.COLORS.textSecondary}}>|</span> <span onClick={toggleSetupTurn} style={!isWhiteToMoveSetup ? Styles.turnSwitchActiveLabelStyle : Styles.turnSwitchLabelStyle}>Black to move</span> </div> <button onClick={clearSetupBoard} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentBlueDark, width: '100%' }}>Clear Board</button> <button onClick={resetToStartingPositionSetup} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentBlueDark, width: '100%' }}>Starting Position</button> <button onClick={loadSetupPositionForAnalysis} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentGreen, width: '100%' }}>Load for Analysis</button> </div> </div> )}
-                    {/* Eval Bar */}
-                    <div style={Styles.evalBarWrapperStyle}> {activeTabInternal !== 'setup' ? ( <EvalBar scoreCp={currentEvalDataForTab?.score_cp ?? null} isLoading={isLoadingEval} barHeight="100%" boardOrientation={boardOrientation} /> ) : ( <div style={{ width: Styles.EVAL_BAR_WIDTH, height: '100%', backgroundColor: 'transparent' }} /> )} </div>
-                    {/* Chessboard */}
-                    <div style={Styles.boardWrapperStyle}> <Chessground fen={activeTabInternal === 'setup' ? tabGameStates.setup.fen : currentActiveFen} key={activeTabInternal === 'setup' ? `setup-${tabGameStates.setup.fen}-${isWhiteToMoveSetup}` : `${activeTabInternal}-${currentActiveFen}-${boardOrientation}`} orientation={boardOrientation} turnColor={getTurnColor()} movable={ activeTabInternal === 'setup' ? { free: false, color: 'both', dests: calcDests(), showDests: true, events: { drop: (orig: Square, dest: Square) => { handleSetupPieceDrag(orig, dest); }}, rookCastle: false, } : { free: false, color: getTurnColor(), dests: calcDests(), showDests: true, events: { after: handleMove } }} onSelect={ activeTabInternal === 'setup' ? (square: Square) => handleSetupSquareInteract(square) : undefined } highlight={{ lastMove: activeTabInternal === 'setup' ? false : true, check: activeTabInternal === 'setup' ? false : true }} premovable={{ enabled: activeTabInternal === 'setup' ? false : true }} /> </div>
-                    
-                    {/* Info Panel */}
-                    <div style={Styles.infoPanelStyle}>
-                        <h4 style={Styles.panelHeaderStyle}>Analysis</h4> 
-                        
-                        {/* PV Table Container (with border) */}
-                        <div style={Styles.pvTableContainerStyle}>
-                            {currentEvalDataForTab && pvTableData && activeTabInternal !== 'setup' && !pvTableData.isErrorPv ? (
-                                <PrincipalVariationTable
-                                    pvString={pvTableData.pvString}
-                                    initialTurn={pvTableData.initialTurn}
-                                    fullMoveNumber={pvTableData.fullMoveNumber}
-                                    pvDisplayLength={pvDisplayLength}
-                                />
-                            ) : pvTableData?.isErrorPv && activeTabInternal !== 'setup' ? (
-                                // Display error inside the table container if PV is an error
-                                <p style={{...Styles.pvInfoTextStyle, marginTop: '5px', padding: '5px'}}> 
-                                    {pvInfoMessage || "Error in analysis."}
-                                </p>
-                            ) : ( activeTabInternal !== 'setup' ? <p style={{padding: '5px'}}>{isLoadingEval ? "Loading evaluation..." : "No evaluation yet."}</p> : <p style={{padding: '5px'}}>Set up a position to analyze.</p> )}
-                        </div>
-                        
-                        {/* Status Message Area (below table, above controls) */}
-                        <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px', marginBottom: '5px', flexShrink: 0, textAlign: 'center' }}>{lastMoveStatus}</p>
-                        
-                        {/* Container for Controls Area (Info Text + Inputs + Buttons) */}
-                        <div style={Styles.analysisControlsContainerStyle}>
-                            {/* Informational text about PV length (now above inputs) */}
-                             {pvInfoMessage && !pvTableData?.isErrorPv && activeTabInternal !== 'setup' && (
-                                <p style={Styles.pvInfoTextStyle}>{pvInfoMessage}</p>
-                             )}
-                             {/* Placeholder to maintain height if no message */}
-                             {(!pvInfoMessage || pvTableData?.isErrorPv || activeTabInternal === 'setup') && (
-                                 <p style={{...Styles.pvInfoTextStyle, visibility: 'hidden'}}>Placeholder</p>
-                             )}
 
-                            {/* Input Controls Row */}
-                            <div style={Styles.analysisInputRowStyle}>
-                                <div style={Styles.singleInputControlStyle}>
-                                    <label htmlFor="analysis-depth" style={Styles.inputControlLabelStyle}>Analysis Depth:</label>
-                                    <input type="number" id="analysis-depth" value={analysisDepth} onChange={handleDepthChange} min="5" max="25" style={Styles.numberInputStyle} />
-                                </div>
-                                <div style={Styles.singleInputControlStyle}>
-                                    <label htmlFor="pv-display-length" style={Styles.inputControlLabelStyle}>PV Display Plies:</label>
-                                    <input type="number" id="pv-display-length" value={pvDisplayLength} onChange={handlePvDisplayLengthChange} min="1" max="20" style={Styles.numberInputStyle} />
-                                </div>
+            {/* Main Body Layout (Tabs | Content) */}
+            <div style={Styles.appBodyStyle}>
+
+                {/* Left Tabs Panel */}
+                <div style={Styles.tabsSidePanelStyle}>
+                    <div style={Styles.tabsControlAreaStyle}>
+                        <button onClick={() => setActiveTab('start')} style={activeTabInternal === 'start' ? Styles.activeTabButtonStyle : Styles.tabButtonStyle}>Analysis Board</button>
+                        <button onClick={() => setActiveTab('pgn')} style={activeTabInternal === 'pgn' ? Styles.activeTabButtonStyle : Styles.tabButtonStyle}>Load PGN</button>
+                        <button onClick={() => setActiveTab('setup')} style={activeTabInternal === 'setup' ? Styles.activeTabButtonStyle : Styles.tabButtonStyle}>Set Up Position</button>
+                    </div>
+                </div>
+
+                {/* Main Application Area (Right Side) */}
+                <div style={Styles.mainAppAreaStyle}>
+
+                    {/* Top Row: Board/Eval + LLM */}
+                    <div style={Styles.topAreaStyle}>
+                        {/* Board Area (Eval Bar + Board) */}
+                        <div style={Styles.boardAreaStyle}>
+                             <div style={Styles.evalBarWrapperStyle}>
+                                <EvalBar scoreCp={currentEvalData?.score_cp ?? null} isLoading={isLoadingEval} barHeight="100%" boardOrientation={boardOrientation} />
+                             </div>
+                             <div style={Styles.boardWrapperStyle}>
+                                <Chessground
+                                    fen={chessgroundFen} // Display start or setup board FEN
+                                    key={activeTabInternal === 'setup' ? `setup-${tabGameStates.setup.fen}-${isWhiteToMoveSetup}` : `start-${currentDisplayFen}-${boardOrientation}`}
+                                    orientation={boardOrientation}
+                                    turnColor={getTurnColor()} // Interaction color based on start board
+                                    movable={ activeTabInternal === 'start' ? { // Moves only on start tab
+                                        free: false, color: getTurnColor(), dests: calcDests(), showDests: true,
+                                        events: { after: handleMove }
+                                    } : (activeTabInternal === 'setup' ? { // Dragging for setup
+                                        free: false, color: 'both', dests: calcDests(), showDests: true,
+                                        events: { drop: handleSetupPieceDrag }
+                                    } : { // View only for PGN
+                                        free: true, color: 'both', dests: new Map(), showDests: false, events: {}
+                                    })}
+                                    viewOnly={activeTabInternal === 'pgn'} // View only for PGN tab
+                                    onSelect={ activeTabInternal === 'setup' ? handleSetupSquareInteract : undefined } // Click interaction only for setup
+                                    highlight={{ lastMove: activeTabInternal === 'start', check: activeTabInternal === 'start' }}
+                                    premovable={{ enabled: activeTabInternal === 'start' }}
+                                />
+                             </div>
+                        </div>
+                         {/* LLM Explanation Panel */}
+                         <div style={Styles.llmPanelStyle}>
+                            LLM Explanation Area
+                        </div>
+                    </div>
+
+                    {/* Analysis Area Below Board */}
+                    <div style={Styles.analysisAreaBelowStyle}>
+                        {/* PGN/Setup Panel (Conditional Left Column) */}
+                        {activeTabInternal === 'pgn' && (
+                            <div style={Styles.pgnPanelBelowStyle}>
+                                <h4 style={Styles.panelMainTitleStyle}>Provide PGN</h4>
+                                <div style={{...Styles.pgnSectionBoxStyle, flexShrink: 0 }}> <h5 style={{...Styles.panelHeaderStyle, textAlign:'left', borderBottom:'none', marginBottom:'5px'}}>Upload File</h5> <label htmlFor="pgn-file-input" style={Styles.fileInputLabelStyle}>Choose PGN File</label> <input id="pgn-file-input" type="file" accept=".pgn,.txt" onChange={handleFileSelect} ref={fileInputRef} style={Styles.fileInputStyle} /> <div style={Styles.fileNameDisplayStyle}>{uploadedFileName ? `Selected: ${uploadedFileName}` : "No file selected."}</div> <button onClick={handleLoadSelectedFile} disabled={!uploadedFileContent} style={uploadedFileContent ? Styles.loadButtonStyleActive : Styles.loadButtonStyleDisabled} onMouseEnter={e => { if (uploadedFileContent) (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackgroundHover);}} onMouseLeave={e => { if (uploadedFileContent) (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackground);}}>Load Game</button> </div>
+                                <div style={Styles.orSeparatorStyle}>OR</div>
+                                <div style={{...Styles.pgnSectionBoxStyle, flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}> <h5 style={{...Styles.panelHeaderStyle, textAlign:'left', borderBottom:'none', marginBottom:'5px', flexShrink: 0}}>Paste Text</h5> <textarea id="pgn-textarea" value={pgnInput} onChange={handlePgnInputChange} placeholder={'[Event "Example"]\n1. e4 e5 2. Nf3 Nc6 *'} style={Styles.textAreaStyle} /> <button onClick={handleSubmitPgnText} style={Styles.loadButtonStyleActive} onMouseEnter={e => (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackgroundHover)} onMouseLeave={e => (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackground)}>Load Game</button> </div>
                             </div>
-                            {/* Button Row */}
-                            <div style={Styles.analysisButtonRowStyle}>
-                                <button onClick={handleFlipBoard} style={{...Styles.analysisButtonStyle, backgroundColor: Styles.COLORS.accentSecondary}}>Flip Board</button>
-                                <button onClick={resetBoard} style={{...Styles.analysisButtonStyle, backgroundColor: Styles.COLORS.accentRed}}>Reset Board</button>
+                        )}
+                        {activeTabInternal === 'setup' && (
+                            <div style={Styles.setupPanelBelowStyle}>
+                                <div> <h4 style={{...Styles.panelMainTitleStyle, marginBottom: '15px'}}>Set Up Position</h4> <div style={Styles.piecePaletteContainerStyle}> <PiecePalette onSelectPiece={handlePalettePieceSelect} selectedPiece={selectedPalettePieceCode} /> </div> </div>
+                                <div style={Styles.setupControlsContainerStyle}> <div style={Styles.turnSwitchOuterStyle}> <span onClick={toggleSetupTurn} style={isWhiteToMoveSetup ? Styles.turnSwitchActiveLabelStyle : Styles.turnSwitchLabelStyle}>White to move</span> <span style={{color: Styles.COLORS.textSecondary}}>|</span> <span onClick={toggleSetupTurn} style={!isWhiteToMoveSetup ? Styles.turnSwitchActiveLabelStyle : Styles.turnSwitchLabelStyle}>Black to move</span> </div> <button onClick={clearSetupBoard} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentBlueDark, width: '100%' }}>Clear Board</button> <button onClick={resetToStartingPositionSetup} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentBlueDark, width: '100%' }}>Starting Position</button> <button onClick={loadSetupPositionForAnalysis} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentGreen, width: '100%' }}>Analyze Setup</button> </div>
+                            </div>
+                        )}
+
+                        {/* PV Panel (Middle Column when PGN/Setup visible, Left otherwise) */}
+                        <div style={Styles.pvPanelBelowStyle}>
+                             <h4 style={Styles.panelHeaderStyle}>Analysis Details</h4>
+                             <div style={Styles.pvTableContainerStyle}>
+                                {currentEvalData && pvTableData && !pvTableData.isErrorPv ? (
+                                    <PrincipalVariationTable pvString={pvTableData.pvString} initialTurn={pvTableData.initialTurn} fullMoveNumber={pvTableData.fullMoveNumber} pvDisplayLength={pvDisplayLength} />
+                                ) : pvTableData?.isErrorPv ? (
+                                    <p style={{...Styles.pvInfoTextStyle, marginTop: '5px', padding: '5px'}}> {pvInfoMessage || "Error in analysis."} </p>
+                                ) : ( <p style={{padding: '5px'}}>{isLoadingEval ? "Loading evaluation..." : "No evaluation yet."}</p> )}
+                             </div>
+                             <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px', flexShrink: 0, textAlign: 'center' }}>{lastMoveStatus}</p>
+                        </div>
+
+                        {/* Controls Panel (Right Column) */}
+                        <div style={Styles.controlsPanelBelowStyle}>
+                            <div style={Styles.analysisControlsContainerStyle}>
+                                 {/* PV Info Message */}
+                                 {pvInfoMessage && !pvTableData?.isErrorPv && (
+                                    <p style={Styles.pvInfoTextStyle}>{pvInfoMessage}</p>
+                                 )}
+                                 {(!pvInfoMessage || pvTableData?.isErrorPv) && (
+                                     <p style={{...Styles.pvInfoTextStyle, visibility: 'hidden'}}>Placeholder</p>
+                                 )}
+                                 {/* Input Controls */}
+                                <div style={Styles.analysisInputRowStyle}>
+                                    <div style={Styles.singleInputControlStyle}>
+                                        <label htmlFor="analysis-depth" style={Styles.inputControlLabelStyle}>Analysis Depth:</label>
+                                        <input type="number" id="analysis-depth" value={analysisDepth} onChange={handleDepthChange} min="5" max="25" style={Styles.numberInputStyle} />
+                                    </div>
+                                    <div style={Styles.singleInputControlStyle}>
+                                        <label htmlFor="pv-display-length" style={Styles.inputControlLabelStyle}>PV Display Plies:</label>
+                                        <input type="number" id="pv-display-length" value={pvDisplayLength} onChange={handlePvDisplayLengthChange} min="1" max="20" style={Styles.numberInputStyle} />
+                                    </div>
+                                </div>
+                                 {/* Action Buttons */}
+                                <div style={Styles.analysisButtonRowStyle}>
+                                    <button onClick={handleFlipBoard} style={{...Styles.analysisButtonStyle, backgroundColor: Styles.COLORS.accentSecondary}}>Flip Board</button>
+                                    <button onClick={resetBoard} style={{...Styles.analysisButtonStyle, backgroundColor: Styles.COLORS.accentRed}}>Reset Board</button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
+
+                </div> {/* End mainAppAreaStyle */}
+            </div> {/* End appBodyStyle */}
+        </div> // End appContainerStyle
     );
 }
