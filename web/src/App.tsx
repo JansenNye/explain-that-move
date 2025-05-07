@@ -6,7 +6,7 @@ import axios from "axios";
 import EvalBar from './EvalBar';
 import PrincipalVariationTable from './PrincipalVariationTable';
 import PiecePalette from './PiecePalette';
-import * as Styles from './stylesConstants'; // Import all style constants
+import * as Styles from './stylesConstants'; 
 
 const ALL_SQUARES_LIST: Square[] = [
   'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1', 'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2',
@@ -33,21 +33,48 @@ const initialGameState = (): GameState => {
   return { instance: newInstance, fen: newInstance.fen() };
 };
 
+// FIX: Refined FEN generation for setup to be more robust
 const generateFenForSetup = (boardInstance: Chess, isWhiteTurn: boolean): string => {
-  let baseFen = boardInstance.fen().split(' ')[0];
-  let fen = baseFen;
-  fen += isWhiteTurn ? ' w' : ' b';
-  fen += ' KQkq - 0 1'; // Default castling, en passant for setup. Can be refined.
-  return fen;
+  const piecePlacement = boardInstance.fen().split(' ')[0];
+  const turn = isWhiteTurn ? 'w' : 'b';
+  
+  // Determine castling rights based on current board state if possible,
+  // otherwise default to none ('-') for custom setups.
+  // This is a simplified approach; a full editor might have UI for castling rights.
+  let castling = "";
+  // Check for White King and Rooks
+  if (boardInstance.get('e1')?.type === 'k' && boardInstance.get('e1')?.color === 'w') {
+    if (boardInstance.get('h1')?.type === 'r' && boardInstance.get('h1')?.color === 'w') castling += "K";
+    if (boardInstance.get('a1')?.type === 'r' && boardInstance.get('a1')?.color === 'w') castling += "Q";
+  }
+  // Check for Black King and Rooks
+  if (boardInstance.get('e8')?.type === 'k' && boardInstance.get('e8')?.color === 'b') {
+    if (boardInstance.get('h8')?.type === 'r' && boardInstance.get('h8')?.color === 'b') castling += "k";
+    if (boardInstance.get('a8')?.type === 'r' && boardInstance.get('a8')?.color === 'b') castling += "q";
+  }
+  if (castling === "") castling = "-";
+
+
+  // En passant: chess.js doesn't directly expose the en passant square from a board state easily
+  // without it being the result of a move. For setup, default to '-'
+  const enPassant = '-'; 
+  const halfMoves = 0; // Typically reset for a new setup
+  const fullMoves = 1; // Typically reset for a new setup
+
+  return `${piecePlacement} ${turn} ${castling} ${enPassant} ${halfMoves} ${fullMoves}`;
 };
 
 export default function App() {
   const [tabGameStates, setTabGameStates] = useState<Record<ActiveTab, GameState>>({
     start: initialGameState(),
     pgn: initialGameState(),
+    // FIX: Initialize setup tab with kings present
     setup: (() => {
       const initialSetupChess = new Chess();
-      initialSetupChess.clear();
+      initialSetupChess.clear(); // Start with an empty board
+      // Add kings to default positions to ensure FEN is valid for chess.js
+      initialSetupChess.put({ type: 'k', color: 'w' }, 'e1');
+      initialSetupChess.put({ type: 'k', color: 'b' }, 'e8');
       return { instance: initialSetupChess, fen: generateFenForSetup(initialSetupChess, true) };
     })(),
   });
@@ -194,12 +221,20 @@ export default function App() {
 
   const updateSetupBoardFen = useCallback((newBoardInstance: Chess, newTurn: boolean) => {
     const newFen = generateFenForSetup(newBoardInstance, newTurn);
-    setTabGameStates(prev => ({
-        ...prev,
-        setup: { instance: new Chess(newFen), fen: newFen }
-    }));
-    setIsWhiteToMoveSetup(newTurn);
-  }, []);
+    // Ensure the instance being stored is also based on the new FEN
+    // to keep instance and FEN string in sync.
+    try {
+        const validatedInstance = new Chess(newFen); // This will throw if FEN is truly bad
+        setTabGameStates(prev => ({
+            ...prev,
+            setup: { instance: validatedInstance, fen: newFen }
+        }));
+        setIsWhiteToMoveSetup(newTurn);
+    } catch (e) {
+        console.error("Error validating FEN during setup update:", newFen, e);
+        // Optionally, revert to a last known good FEN or show an error
+    }
+  }, []); // Removed setIsWhiteToMoveSetup from deps as it's a setter
 
   const handlePalettePieceSelect = useCallback((pieceCode: string) => {
     setSelectedPalettePieceCode(prev => prev === pieceCode ? null : pieceCode);
@@ -229,7 +264,7 @@ export default function App() {
 
     if (pieceOnFrom) {
       board.remove(from);
-      board.remove(to);
+      board.remove(to); // Clear destination before putting
       board.put({ type: pieceOnFrom.type, color: pieceOnFrom.color }, to);
       updateSetupBoardFen(board, isWhiteToMoveSetup);
     }
@@ -237,18 +272,24 @@ export default function App() {
 
   const toggleSetupTurn = useCallback(() => {
     const newTurn = !isWhiteToMoveSetup;
+    // Create a new Chess instance from the current FEN to pass to updateSetupBoardFen
+    // This ensures we're working with the board's current piece placement.
     updateSetupBoardFen(new Chess(tabGameStates.setup.fen), newTurn);
   }, [isWhiteToMoveSetup, tabGameStates.setup.fen, updateSetupBoardFen]);
 
+  // FIX: clearSetupBoard ensures kings are present
   const clearSetupBoard = useCallback(() => {
     const newBoard = new Chess();
     newBoard.clear();
-    updateSetupBoardFen(newBoard, true);
+    // Add kings to default positions after clearing
+    newBoard.put({ type: 'k', color: 'w' }, 'e1');
+    newBoard.put({ type: 'k', color: 'b' }, 'e8');
+    updateSetupBoardFen(newBoard, true); // Default to White's turn
     setSelectedPalettePieceCode(null);
   }, [updateSetupBoardFen]);
 
   const resetToStartingPositionSetup = useCallback(() => {
-    const newBoard = new Chess();
+    const newBoard = new Chess(); // Standard starting position
     updateSetupBoardFen(newBoard, true);
     setSelectedPalettePieceCode(null);
   }, [updateSetupBoardFen]);
@@ -272,20 +313,24 @@ export default function App() {
   const resetBoard = useCallback(() => {
     setLastMoveStatus("");
     const currentTabInitialState = initialGameState();
-    setTabGameStates(prevStates => ({
-      ...prevStates,
-      [activeTabInternal]: currentTabInitialState,
-    }));
+    // For setup tab, ensure it resets to the specific setup initial state (empty with kings)
+    if (activeTabInternal === 'setup') {
+        clearSetupBoard();
+    } else {
+        setTabGameStates(prevStates => ({
+            ...prevStates,
+            [activeTabInternal]: currentTabInitialState,
+        }));
+    }
+
     if (activeTabInternal === 'pgn') {
         setPgnInput("");
         setUploadedFileContent(null);
         setUploadedFileName(null);
         if (fileInputRef.current) { fileInputRef.current.value = ""; }
     }
-    if (activeTabInternal === 'setup') {
-        clearSetupBoard();
-    }
   }, [activeTabInternal, clearSetupBoard]);
+
 
   const getTurnColor = useCallback((): 'white' | 'black' => {
     if (activeTabInternal === 'setup') {
@@ -326,10 +371,11 @@ export default function App() {
   const currentEvalDataForTab = info[currentActiveFen];
   const pvTableData = useMemo(() => {
     if (!currentEvalDataForTab || !currentEvalDataForTab.pv) return null;
-    const boardForPvContext = new Chess(currentActiveFen);
+    const boardForPvContext = new Chess(currentActiveFen); // Use currentActiveFen
     const turn: 'white' | 'black' = boardForPvContext.turn() === 'w' ? 'white' : 'black';
     return { pvString: currentEvalDataForTab.pv, initialTurn: turn, fullMoveNumber: boardForPvContext.moveNumber() };
   }, [currentEvalDataForTab, currentActiveFen]);
+
 
   return (
     <div style={Styles.appContainerStyle}>
@@ -454,4 +500,3 @@ export default function App() {
     </div>
   );
 }
-
