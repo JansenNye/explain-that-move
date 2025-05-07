@@ -6,7 +6,7 @@ import axios from "axios";
 import EvalBar from './EvalBar';
 import PrincipalVariationTable from './PrincipalVariationTable';
 import PiecePalette from './PiecePalette';
-import * as Styles from './stylesConstants';
+import * as Styles from './stylesConstants'; // Import all style constants
 
 const ALL_SQUARES_LIST: Square[] = [
   'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1', 'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2',
@@ -78,10 +78,11 @@ export default function App() {
   const [selectedPalettePieceCode, setSelectedPalettePieceCode] = useState<string | null>(null);
 
   const [boardOrientation, setBoardOrientation] = useState<BoardOrientation>('white');
-  // MODIFIED: Default analysis depth to 20
   const [analysisDepth, setAnalysisDepth] = useState<number>(20); 
-  
   const [isLoadingEval, setIsLoadingEval] = useState<boolean>(false);
+  
+  // NEW State for PV display length
+  const [pvDisplayLength, setPvDisplayLength] = useState<number>(4); // Default to 4 plies (2 full moves)
 
   const setActiveTab = useCallback((tab: ActiveTab) => {
     setLastMoveStatus("");
@@ -98,11 +99,7 @@ export default function App() {
     const currentFenForEffect = tabGameStates[activeTabInternal].fen;
     if (!currentFenForEffect || activeTabInternal === 'setup') {
         if (activeTabInternal === 'setup') {
-            setInfo(prev => {
-                const newInfo = {...prev};
-                delete newInfo[currentFenForEffect]; 
-                return newInfo;
-            });
+            setInfo(prev => { const newInfo = {...prev}; delete newInfo[currentFenForEffect]; return newInfo; });
         }
         setIsLoadingEval(false); 
         return;
@@ -112,8 +109,6 @@ export default function App() {
     const fetchEvalForFen = async (fenToEvaluate: string, depthToUse: number) => {
       if (!isMounted) return;
       setIsLoadingEval(true); 
-      // MODIFIED: Commented out status updates for fetching
-      // setLastMoveStatus("Fetching evaluation..."); 
       try {
         const { data } = await axios.get<EvalPayload>(
           `${import.meta.env.VITE_API_BASE}/eval`,
@@ -121,38 +116,28 @@ export default function App() {
         );
         if (isMounted) {
           setInfo(prevInfo => ({ ...prevInfo, [fenToEvaluate]: data }));
-          // MODIFIED: Commented out status updates for fetching
-          // setLastMoveStatus(prev => prev === "Fetching evaluation..." ? "Evaluation complete." : prev);
         }
       } catch (err) {
         if (isMounted) {
           console.error(`[API_CALL] ❌ Error fetching evaluation for ${fenToEvaluate}:`, err);
-          // MODIFIED: Commented out status updates for fetching
-          // setLastMoveStatus("Error fetching evaluation.");
         }
       } finally {
-          if (isMounted) {
-              setIsLoadingEval(false); 
-          }
+          if (isMounted) setIsLoadingEval(false); 
       }
     };
-
     fetchEvalForFen(currentFenForEffect, analysisDepth);
-
     return () => { isMounted = false; };
-
   }, [tabGameStates, activeTabInternal, analysisDepth]);
 
   const handleMove = useCallback((from: Square, to: Square) => {
-    setLastMoveStatus(""); // Clear previous specific messages
+    setLastMoveStatus(""); 
     const currentBoardFen = tabGameStates[activeTabInternal].fen;
     const boardForMove = new Chess(currentBoardFen);
     const moveResult = boardForMove.move({ from, to, promotion: "q" });
     if (moveResult === null) {
-      // setLastMoveStatus(`Invalid move: ${from}-${to}.`); // Keep specific error for invalid move
+      // No status update for invalid move, board won't change
     } else {
       const newFen = boardForMove.fen();
-      // setLastMoveStatus(`Move: ${moveResult.san}`); // Set status for valid move
       setTabGameStates(prevStates => ({
         ...prevStates,
         [activeTabInternal]: { instance: boardForMove, fen: newFen },
@@ -170,9 +155,6 @@ export default function App() {
       const headers = newChessInstance.header();
       const isSuccessfullyLoaded = history.length > 0 || currentFenAfterLoad !== new Chess().fen() || (Object.keys(headers).length > 0 && pgnString.toLowerCase().includes('[event '));
       if (!isSuccessfullyLoaded) { setLastMoveStatus(`Failed to load PGN from ${source}. Invalid PGN or empty game.`); return; }
-      const lastMoveVerbose = history.length > 0 ? history[history.length - 1] : null;
-      const lastMoveSan = lastMoveVerbose ? (lastMoveVerbose as Move).san : 'Start of PGN';
-      // setLastMoveStatus(`PGN loaded. Last move: ${lastMoveSan}`);
       setTabGameStates(prevStates => ({ ...prevStates, pgn: { instance: newChessInstance, fen: currentFenAfterLoad } }));
       setPgnInput(""); setUploadedFileContent(null); setUploadedFileName(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -187,7 +169,6 @@ export default function App() {
       reader.onload = (e) => {
         const text = e.target?.result as string;
         setUploadedFileContent(text ?? null); setUploadedFileName(file.name);
-        // setLastMoveStatus(`File "${file.name}" selected. Ready to load.`);
       };
       reader.onerror = () => { setLastMoveStatus("Error reading file."); setUploadedFileContent(null); setUploadedFileName(null); };
       reader.readAsText(file);
@@ -196,7 +177,6 @@ export default function App() {
 
   const handleLoadSelectedFile = useCallback(() => {
     if (uploadedFileContent) loadPgn(uploadedFileContent, 'file');
-    // else setLastMoveStatus("No file selected to load.");
   }, [uploadedFileContent, loadPgn]);
 
   const handlePgnInputChange = useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => setPgnInput(event.target.value), []);
@@ -260,15 +240,12 @@ export default function App() {
       const analysisChess = new Chess(fenToLoad);
       setTabGameStates(prev => ({ ...prev, start: { instance: analysisChess, fen: fenToLoad } }));
       setActiveTab('start'); 
-      // setLastMoveStatus(`Position loaded from setup for analysis.`);
     } catch (e) { 
-      // setLastMoveStatus("Invalid FEN from setup. Cannot load for analysis."); 
       console.error("Invalid FEN from setup:", fenToLoad, e); 
     }
   }, [tabGameStates.setup.fen, setActiveTab]);
 
   const resetBoard = useCallback(() => {
-    // setLastMoveStatus(""); // Keep this to clear any previous messages
     if (activeTabInternal === 'setup') {
         clearSetupBoard();
     } else {
@@ -279,6 +256,7 @@ export default function App() {
         setPgnInput(""); setUploadedFileContent(null); setUploadedFileName(null);
         if (fileInputRef.current) { fileInputRef.current.value = ""; }
     }
+    setLastMoveStatus(""); 
   }, [activeTabInternal, clearSetupBoard]);
 
   const getTurnColor = useCallback((): 'white' | 'black' => {
@@ -314,12 +292,19 @@ export default function App() {
 
   const handleDepthChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     let newDepth = parseInt(event.target.value, 10);
-    // MODIFIED: Default if NaN
     if (isNaN(newDepth)) newDepth = 20; 
-    // MODIFIED: Max depth to 25
     newDepth = Math.max(5, Math.min(25, newDepth)); 
     setAnalysisDepth(newDepth);
   }, []);
+
+  // NEW: Handler for PV Display Length Change
+  const handlePvDisplayLengthChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    let newLength = parseInt(event.target.value, 10);
+    if (isNaN(newLength)) newLength = 4; // Default if input is invalid
+    newLength = Math.max(1, Math.min(8, newLength)); // Clamp between 1 and 8 plies
+    setPvDisplayLength(newLength);
+  }, []);
+
 
   const currentActiveGameState = tabGameStates[activeTabInternal];
   const currentActiveFen = currentActiveGameState.fen;
@@ -383,7 +368,7 @@ export default function App() {
           )}
 
           <div style={Styles.evalBarWrapperStyle}>
-            {activeTabInternal !== 'setup' ? ( // Only render EvalBar if not in setup mode
+            {activeTabInternal !== 'setup' ? (
               <EvalBar 
                 scoreCp={currentEvalDataForTab ? currentEvalDataForTab.score_cp : null} 
                 isLoading={isLoadingEval}
@@ -391,7 +376,6 @@ export default function App() {
                 boardOrientation={boardOrientation} 
               />
             ) : (
-              // Placeholder for setup tab (or could be an empty EvalBar if preferred)
               <div style={{ width: Styles.EVAL_BAR_WIDTH, height: '100%', backgroundColor: 'transparent' }} />
             )}
           </div>
@@ -420,11 +404,15 @@ export default function App() {
             <h4 style={{ ...Styles.panelHeaderStyle, marginBottom: '10px' }}>Analysis</h4>
             <div style={Styles.pvTableContainerStyle}>
               {currentEvalDataForTab && pvTableData && activeTabInternal !== 'setup' ? (
-                <PrincipalVariationTable pvString={pvTableData.pvString} initialTurn={pvTableData.initialTurn} fullMoveNumber={pvTableData.fullMoveNumber} />
+                <PrincipalVariationTable 
+                  pvString={pvTableData.pvString} 
+                  initialTurn={pvTableData.initialTurn} 
+                  fullMoveNumber={pvTableData.fullMoveNumber}
+                  pvDisplayLength={pvDisplayLength}
+                />
               ) : currentEvalDataForTab && currentEvalDataForTab.pv && activeTabInternal !== 'setup' ? (
                  null 
               ) : ( activeTabInternal !== 'setup' ? <p>{isLoadingEval ? "" : "No evaluation yet."}</p> : <p>Set up a position to analyze.</p> )} 
-                 {/* MODIFIED: Show empty string or "No evaluation yet." during/after loading */}
             </div>
             <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px', flexShrink: 0 }}>{lastMoveStatus}</p>
             
@@ -437,9 +425,21 @@ export default function App() {
                   value={analysisDepth}
                   onChange={handleDepthChange}
                   min="5"
-                  // MODIFIED: Max depth to 25
                   max="25" 
                   style={Styles.depthInputStyle}
+                />
+              </div>
+              {/* NEW PV Display Length Control */}
+              <div style={Styles.pvLengthControlStyle}> 
+                <label htmlFor="pv-display-length" style={{color: Styles.COLORS.textSecondary, fontSize: '0.9em'}}>PV Display Plies:</label>
+                <input
+                  type="number"
+                  id="pv-display-length"
+                  value={pvDisplayLength}
+                  onChange={handlePvDisplayLengthChange}
+                  min="1"
+                  max="8" // Max 4 full moves (8 plies)
+                  style={Styles.pvLengthInputStyle}
                 />
               </div>
               <div style={Styles.analysisButtonRowStyle}>

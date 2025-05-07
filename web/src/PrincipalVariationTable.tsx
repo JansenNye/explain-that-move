@@ -1,14 +1,14 @@
-// src/PrincipalVariationTable.tsx
 import React from 'react';
 
 interface PrincipalVariationTableProps {
   pvString: string;
   initialTurn: 'white' | 'black';
   fullMoveNumber: number;
+  pvDisplayLength: number; // NEW: Number of plies to display
 }
 
 interface MovePair {
-  moveNumberDisplay: string; // e.g., "1.", "1...", "2."
+  moveNumberDisplay: string; 
   whiteMove?: string;
   blackMove?: string;
 }
@@ -17,74 +17,55 @@ const PrincipalVariationTable: React.FC<PrincipalVariationTableProps> = ({
   pvString,
   initialTurn,
   fullMoveNumber,
+  pvDisplayLength, // Use this prop
 }) => {
-  // Normalize pvString and check for empty/none cases early
   const trimmedPvString = pvString ? pvString.trim() : "";
   if (!trimmedPvString || trimmedPvString.toLowerCase() === "(none)" || trimmedPvString.toLowerCase() === "(empty pv)") {
     return <p style={{ fontStyle: 'italic', color: '#aaa', marginTop: '10px' }}>No principal variation available.</p>;
   }
 
-  const moves = trimmedPvString.split(' ').filter(move => move.trim() !== "");
+  // MODIFIED: Slice the moves array based on pvDisplayLength
+  const allMoves = trimmedPvString.split(' ').filter(move => move.trim() !== "");
+  const movesToDisplay = allMoves.slice(0, pvDisplayLength); // Limit to specified number of plies
+
   const movePairs: MovePair[] = [];
   let currentFullMove = fullMoveNumber;
 
-  if (moves.length === 0) {
-    // If after splitting and filtering, there are no moves, treat as no PV
-     return <p style={{ fontStyle: 'italic', color: '#aaa', marginTop: '10px' }}>No principal variation available.</p>;
+  if (movesToDisplay.length === 0) {
+     return <p style={{ fontStyle: 'italic', color: '#aaa', marginTop: '10px' }}>No principal variation to display (or length is 0).</p>;
   }
 
   let pvIndex = 0;
 
   if (initialTurn === 'black') {
-    // PV starts with Black's move, completing the currentFullMove
-    movePairs.push({
-      moveNumberDisplay: `${currentFullMove}...`, // Indicate it's Black's move completing the turn
-      whiteMove: undefined, // No White move for this initial part of the PV
-      blackMove: moves[pvIndex++] || undefined,
-    });
-    // For subsequent moves, White starts the next fullMoveNumber
-    currentFullMove++; 
+    if (pvIndex < movesToDisplay.length) { // Check if there's a move to display
+        movePairs.push({
+        moveNumberDisplay: `${currentFullMove}...`, 
+        whiteMove: undefined, 
+        blackMove: movesToDisplay[pvIndex++] || undefined,
+        });
+        currentFullMove++; 
+    }
   }
 
-  // Process remaining moves, now assuming White's turn to start a pair
-  while (pvIndex < moves.length) {
+  while (pvIndex < movesToDisplay.length) {
     movePairs.push({
       moveNumberDisplay: `${currentFullMove}.`,
-      whiteMove: moves[pvIndex++] || undefined,
-      blackMove: moves[pvIndex++] || undefined, // Will be undefined if pvIndex goes out of bounds
+      whiteMove: movesToDisplay[pvIndex++] || undefined,
+      blackMove: (pvIndex < movesToDisplay.length) ? (movesToDisplay[pvIndex++] || undefined) : undefined,
     });
     currentFullMove++;
   }
   
-  // Styles (can be moved to a CSS file for larger applications)
-  const tableStyle: React.CSSProperties = {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: '0.9em',
-    marginTop: '5px', // Reduced margin
-  };
-  const thStyle: React.CSSProperties = {
-    textAlign: 'left',
-    padding: '4px 6px',
-    borderBottom: '1px solid #555',
-    color: '#ccc',
-    fontWeight: 'normal',
-  };
-  const tdStyle: React.CSSProperties = {
-    padding: '4px 6px',
-    borderBottom: '1px solid #444',
-    minWidth: '60px', // Give moves some space
-    verticalAlign: 'top',
-  };
-  const moveNumberCellStyle: React.CSSProperties = {
-    ...tdStyle,
-    width: '35px', // Fixed width for move number
-    color: '#aaa',
-  };
+  const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: '0.9em', marginTop: '5px' };
+  const thStyle: React.CSSProperties = { textAlign: 'left', padding: '4px 6px', borderBottom: '1px solid #555', color: '#ccc', fontWeight: 'normal' };
+  const tdStyle: React.CSSProperties = { padding: '4px 6px', borderBottom: '1px solid #444', minWidth: '60px', verticalAlign: 'top' };
+  const moveNumberCellStyle: React.CSSProperties = { ...tdStyle, width: '35px', color: '#aaa' };
 
   return (
     <div>
-      <h4 style={{ marginTop: '15px', marginBottom: '5px', color: '#ddd', fontWeight: 'bold' }}>Principal Variation:</h4>
+      {/* Title is now optional or can be part of the main panel header */}
+      {/* <h4 style={{ marginTop: '15px', marginBottom: '5px', color: '#ddd', fontWeight: 'bold' }}>Principal Variation:</h4> */}
       {movePairs.length > 0 ? (
         <table style={tableStyle}>
           <thead>
@@ -105,8 +86,7 @@ const PrincipalVariationTable: React.FC<PrincipalVariationTableProps> = ({
           </tbody>
         </table>
       ) : (
-        // Fallback if parsing resulted in no pairs but pvString might indicate an error from engine
-        <p style={{ fontStyle: 'italic', color: '#aaa', marginTop: '10px' }}>{trimmedPvString}</p>
+        <p style={{ fontStyle: 'italic', color: '#aaa', marginTop: '10px' }}>{trimmedPvString || "No PV to display."}</p>
       )}
     </div>
   );

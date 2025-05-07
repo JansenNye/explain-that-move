@@ -162,15 +162,15 @@ export const genericButtonStyle: React.CSSProperties = {
   fontWeight: 'bold',
   transition: 'background-color 0.2s, color 0.2s, opacity 0.2s',
   fontSize: '0.9em',
-  // width: '100%', // MODIFIED: Removed default full width
   flexShrink: 0,
+  textAlign: 'center', 
 };
 
 export const loadButtonStyleActive: React.CSSProperties = {
   ...genericButtonStyle,
   backgroundColor: COLORS.buttonLoadBackground,
   color: COLORS.buttonLoadText,
-  width: '100%', // Explicitly set full width for these buttons
+  width: '100%', 
 };
 
 export const loadButtonStyleDisabled: React.CSSProperties = {
@@ -179,7 +179,7 @@ export const loadButtonStyleDisabled: React.CSSProperties = {
   color: COLORS.buttonLoadTextDisabled,
   opacity: 0.7,
   cursor: 'not-allowed',
-  width: '100%', // Explicitly set full width for these buttons
+  width: '100%', 
 };
 
 export const mainContentAreaStyle: React.CSSProperties = {
@@ -319,32 +319,32 @@ export const analysisControlsContainerStyle: React.CSSProperties = {
   marginTop: 'auto', 
   display: 'flex',
   flexDirection: 'column',
-  gap: '15px', 
+  gap: '10px', // Gap between depth control, PV length control, and button row
 };
 
 export const depthControlStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between', 
-    gap: '10px',
-    padding: '8px 12px', // Adjusted padding
-    backgroundColor: COLORS.backgroundInput,
-    borderRadius: '4px',
-    border: `1px solid ${COLORS.borderLight}`,
-  };
-  
-  export const depthInputStyle: React.CSSProperties = {
-    width: '55px', // Slightly narrower
-    padding: '5px 8px',
-    backgroundColor: COLORS.backgroundDarker, 
-    color: COLORS.textPrimary,
-    border: `1px solid ${COLORS.borderDark}`,
-    borderRadius: '4px',
-    textAlign: 'center',
-    fontSize: '0.9em',
-    appearance: 'textfield', // For Chrome, Safari, Edge, Opera
-    MozAppearance: 'textfield', // For Firefox
-  };
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between', 
+  gap: '10px',
+  padding: '8px 12px', 
+  backgroundColor: COLORS.backgroundInput,
+  borderRadius: '4px',
+  border: `1px solid ${COLORS.borderLight}`,
+};
+
+export const depthInputStyle: React.CSSProperties = {
+  width: '55px', 
+  padding: '5px 8px',
+  backgroundColor: COLORS.backgroundDarker, 
+  color: COLORS.textPrimary,
+  border: `1px solid ${COLORS.borderDark}`,
+  borderRadius: '4px',
+  textAlign: 'center',
+  fontSize: '0.9em',
+  appearance: 'textfield', 
+  MozAppearance: 'textfield', 
+};
 
 export const analysisButtonRowStyle: React.CSSProperties = {
   display: 'flex',
@@ -355,5 +355,15 @@ export const analysisButtonRowStyle: React.CSSProperties = {
 export const analysisButtonStyle: React.CSSProperties = { 
   ...genericButtonStyle, 
   flexGrow: 1, 
-  flexBasis: 0,
+  flexBasis: 0, 
 };
+
+// Style for PV Display Length control (reusing depthControlStyle and depthInputStyle)
+export const pvLengthControlStyle: React.CSSProperties = { 
+    ...depthControlStyle // Same visual style as depth control
+}; 
+export const pvLengthInputStyle: React.CSSProperties = { 
+    ...depthInputStyle   // Same visual style as depth input
+};
+
+
