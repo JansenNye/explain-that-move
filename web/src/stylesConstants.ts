@@ -323,25 +323,28 @@ export const analysisControlsContainerStyle: React.CSSProperties = {
 };
 
 export const depthControlStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '10px',
-  padding: '8px',
-  backgroundColor: COLORS.backgroundInput,
-  borderRadius: '4px',
-  border: `1px solid ${COLORS.borderLight}`,
-};
-
-export const depthInputStyle: React.CSSProperties = {
-  width: '60px',
-  padding: '5px 8px',
-  backgroundColor: COLORS.backgroundDarker, 
-  color: COLORS.textPrimary,
-  border: `1px solid ${COLORS.borderDark}`,
-  borderRadius: '4px',
-  textAlign: 'center',
-  fontSize: '0.9em',
-};
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between', 
+    gap: '10px',
+    padding: '8px 12px', // Adjusted padding
+    backgroundColor: COLORS.backgroundInput,
+    borderRadius: '4px',
+    border: `1px solid ${COLORS.borderLight}`,
+  };
+  
+  export const depthInputStyle: React.CSSProperties = {
+    width: '55px', // Slightly narrower
+    padding: '5px 8px',
+    backgroundColor: COLORS.backgroundDarker, 
+    color: COLORS.textPrimary,
+    border: `1px solid ${COLORS.borderDark}`,
+    borderRadius: '4px',
+    textAlign: 'center',
+    fontSize: '0.9em',
+    appearance: 'textfield', // For Chrome, Safari, Edge, Opera
+    MozAppearance: 'textfield', // For Firefox
+  };
 
 export const analysisButtonRowStyle: React.CSSProperties = {
   display: 'flex',
@@ -351,6 +354,6 @@ export const analysisButtonRowStyle: React.CSSProperties = {
 
 export const analysisButtonStyle: React.CSSProperties = { 
   ...genericButtonStyle, 
-  flexGrow: 1, // Allow buttons to grow equally
-  // width is not set to 100% here, flexGrow will handle distribution
+  flexGrow: 1, 
+  flexBasis: 0,
 };
