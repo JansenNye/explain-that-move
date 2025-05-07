@@ -1,4 +1,3 @@
-// src/EvalBar.tsx
 import React from 'react';
 
 interface EvalBarProps {
@@ -24,14 +23,13 @@ const EvalBar: React.FC<EvalBarProps> = ({
   const mateThreshold = 9000; // Assuming scores >= this are mate scores
 
   if (Math.abs(normalizedScore) >= mateThreshold) {
-    const mateIn = Math.ceil((maxDisplayScoreCp - Math.abs(normalizedScore) / 100) / 100); // Simplified mate-in-X logic
-    scoreToDisplay = `M${Math.abs(10000 - Math.abs(normalizedScore))}`; // e.g. M5 if mate_score is 10000 and score is 9995
-    if (normalizedScore < -mateThreshold) { // Mate for Black
+    scoreToDisplay = `M${Math.abs(10000 - Math.abs(normalizedScore))}`;
+    if (normalizedScore < -mateThreshold) {
         scoreToDisplay = `-${scoreToDisplay}`;
     }
   } else {
     scoreToDisplay = (normalizedScore / 100).toFixed(2);
-     if (normalizedScore > 0) {
+     if (normalizedScore > 0 && parseFloat(scoreToDisplay) !== 0) { // Also check if not exactly 0.00
         scoreToDisplay = `+${scoreToDisplay}`;
     }
   }
@@ -52,7 +50,7 @@ const EvalBar: React.FC<EvalBarProps> = ({
 
   const blackStyle: React.CSSProperties = {
     height: `${100 - whiteHeightPercent}%`,
-    backgroundColor: 'rgba(60, 60, 60, 0.9)', // Slightly lighter black
+    backgroundColor: 'rgba(20, 20, 25, 0.9)',
     width: '100%',
     transition: 'height 0.3s ease-in-out',
     position: 'absolute',
@@ -83,13 +81,13 @@ const EvalBar: React.FC<EvalBarProps> = ({
     position: 'absolute',
     width: '100%',
     textAlign: 'center',
-    padding: '3px 0', // Small padding
-    color: showScoreOnWhiteSide ? 'black' : 'white', // Text color contrast
-    // Adjust top/bottom based on which side the score is shown
+    padding: '3px 0',
+    color: showScoreOnWhiteSide ? 'black' : 'white',
+    textShadow: showScoreOnWhiteSide ? '0 0 2px rgba(255,255,255,0.3)' : '0 0 2px rgba(0,0,0,0.3)', // Subtle shadow for readability
     ...(showScoreOnWhiteSide
-      ? { bottom: '2px' } // Place at the bottom of the white part (top of the advantage)
-      : { top: '2px' }),  // Place at the top of the black part (bottom of the advantage)
-    pointerEvents: 'none', // So text doesn't interfere with any bar interactions
+      ? { bottom: '2px' }
+      : { top: '2px' }),
+    pointerEvents: 'none',
     lineHeight: '1',
   };
 

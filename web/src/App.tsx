@@ -3,10 +3,9 @@ import Chessground from "react-chessground";
 import "react-chessground/dist/styles/chessground.css";
 import { Chess, type Square, type Move } from "chess.js";
 import axios from "axios";
-import EvalBar from './EvalBar'; 
-import PrincipalVariationTable from './PrincipalVariationTable'; 
+import EvalBar from './EvalBar';
+import PrincipalVariationTable from './PrincipalVariationTable';
 
-// Define all square names for calculating destinations
 const ALL_SQUARES_LIST: Square[] = [
   'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1', 'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2',
   'a3', 'b3', 'c3', 'd3', 'e3', 'f3', 'g3', 'h3', 'a4', 'b4', 'c4', 'd4', 'e4', 'f4', 'g4', 'h4',
@@ -14,101 +13,95 @@ const ALL_SQUARES_LIST: Square[] = [
   'a7', 'b7', 'c7', 'd7', 'e7', 'f7', 'g7', 'h7', 'a8', 'b8', 'c8', 'd8', 'e8', 'f8', 'g8', 'h8'
 ];
 
-// Interface for the evaluation payload from the backend
 interface EvalPayload {
   cached: boolean;
   score_cp: number;
   pv: string;
 }
 
-// Define types for the active tab
 type ActiveTab = 'start' | 'pgn' | 'setup';
 
-// Interface for the game state associated with each tab
 interface GameState {
-  instance: Chess; // The chess.js instance for this tab
-  fen: string;     // The FEN string for this tab
+  instance: Chess;
+  fen: string;
 }
 
-// Function to create an initial (new game) state
 const initialGameState = (): GameState => {
   const newInstance = new Chess();
   return { instance: newInstance, fen: newInstance.fen() };
 };
 
 export default function App() {
-  // State to hold the game state for each tab
   const [tabGameStates, setTabGameStates] = useState<Record<ActiveTab, GameState>>({
     start: initialGameState(),
     pgn: initialGameState(),
-    setup: initialGameState(), // "Set Up Position" tab also starts with a fresh board
+    setup: initialGameState(),
   });
 
-  // State for the currently active tab
-  const [activeTab, setActiveTab] = useState<ActiveTab>('start');
-  
-  // Derived state: get the game state and FEN for the currently active tab
-  const currentGameState = tabGameStates[activeTab];
+  const [activeTabInternal, setActiveTabInternalState] = useState<ActiveTab>('start');
+
+  const currentGameState = tabGameStates[activeTabInternal];
   const currentFen = currentGameState.fen;
 
-  // State for storing evaluation info (keyed by FEN, so it's shared across tabs if FEN matches)
   const [info, setInfo] = useState<Record<string, EvalPayload>>({});
-  // State for user feedback messages
-  const [lastMoveStatus, setLastMoveStatus] = useState<string>(""); 
-  // State for the PGN text area input
-  const [pgnInput, setPgnInput] = useState<string>(""); 
-  // Ref for the file input element (to clear it programmatically)
-  const fileInputRef = useRef<HTMLInputElement>(null); 
+  const [lastMoveStatus, setLastMoveStatus] = useState<string>("");
+  const [pgnInput, setPgnInput] = useState<string>("");
+  const [uploadedFileContent, setUploadedFileContent] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Effect to fetch evaluation when the active tab's FEN changes
+  const setActiveTab = (tab: ActiveTab) => {
+    setLastMoveStatus("");
+    if (activeTabInternal === 'pgn' && tab !== 'pgn') {
+        setPgnInput("");
+        setUploadedFileContent(null);
+        setUploadedFileName(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+    setActiveTabInternalState(tab);
+  };
+
+
   useEffect(() => {
-    if (!currentFen) return; // Don't fetch if FEN is somehow not set
-    
+    if (!currentFen) return;
     const fetchEvalForFen = async (fenToEvaluate: string) => {
       try {
         const { data } = await axios.get<EvalPayload>(
-          `${import.meta.env.VITE_API_BASE}/eval`, // Ensure VITE_API_BASE is in your .env file
-          { params: { fen: fenToEvaluate, depth: 12 } } // Depth for Stockfish evaluation
+          `${import.meta.env.VITE_API_BASE}/eval`,
+          { params: { fen: fenToEvaluate, depth: 12 } }
         );
-        // Store evaluation info keyed by FEN
         setInfo(prevInfo => ({ ...prevInfo, [fenToEvaluate]: data }));
       } catch (err) {
         console.error(`[API_CALL] ❌ Error fetching evaluation for ${fenToEvaluate}:`, err);
-        // Optionally, update lastMoveStatus to show an error to the user
       }
     };
     fetchEvalForFen(currentFen);
-  }, [currentFen, activeTab]); // Re-fetch if currentFen changes or if activeTab changes (to cover all cases)
+  }, [currentFen, activeTabInternal]);
 
-  // Callback for when a move is made on the Chessground board
   const handleMove = useCallback((from: Square, to: Square) => {
-    setLastMoveStatus(""); // Clear any previous status message
-    // Create a new Chess instance from the active tab's current FEN to attempt the move
-    const boardForMove = new Chess(currentFen); 
-    const moveResult = boardForMove.move({ from, to, promotion: "q" }); // Auto-promote to queen
+    setLastMoveStatus("");
+    const boardForMove = new Chess(currentFen);
+    const moveResult = boardForMove.move({ from, to, promotion: "q" });
 
-    if (moveResult === null) { // Move was illegal
+    if (moveResult === null) {
       setLastMoveStatus(`Invalid move: ${from}-${to}.`);
-    } else { // Move was legal
+    } else {
       const newFen = boardForMove.fen();
       setLastMoveStatus(`Move: ${moveResult.san}`);
-      // Update the game state for the currently active tab
       setTabGameStates(prevStates => ({
         ...prevStates,
-        [activeTab]: { instance: boardForMove, fen: newFen },
+        [activeTabInternal]: { instance: boardForMove, fen: newFen },
       }));
     }
-  }, [activeTab, currentFen]); // Dependencies: activeTab and the FEN of that tab
+  }, [activeTabInternal, currentFen]);
 
-  // Function to get the current turn color for the active tab
   const getTurnColor = useCallback((): 'white' | 'black' => {
-    const tempBoard = new Chess(currentFen); // Use current FEN of the active tab
+    const tempBoard = new Chess(currentFen);
     return tempBoard.turn() === "w" ? "white" : "black";
   }, [currentFen]);
 
-  // Function to calculate valid destination squares for Chessground for the active tab
   const calcDests = useCallback(() => {
-    const tempBoard = new Chess(currentFen); // Use current FEN of the active tab
+    const tempBoard = new Chess(currentFen);
     const dests = new Map<Square, Square[]>();
     ALL_SQUARES_LIST.forEach(s => {
       const piece = tempBoard.get(s);
@@ -120,265 +113,403 @@ export default function App() {
     return dests;
   }, [currentFen]);
 
-  // Function to load PGN string, specifically updates the 'pgn' tab's game state
-  const loadPgn = (pgnString: string) => {
-    if (!pgnString.trim()) {
+  const loadPgn = (pgnString: string, source: 'file' | 'text' = 'text') => {
+    if (!pgnString || !pgnString.trim()) {
       setLastMoveStatus("PGN input is empty.");
       return;
     }
     try {
-      const newChessInstance = new Chess(); 
+      const newChessInstance = new Chess();
       const options: { sloppy?: boolean; newlineChar?: string } = { sloppy: true };
-      newChessInstance.loadPgn(pgnString, options); 
+      newChessInstance.loadPgn(pgnString, options);
 
       const history = newChessInstance.history({ verbose: true });
       const currentFenAfterLoad = newChessInstance.fen();
       const headers = newChessInstance.header();
-      // Check if loading was successful (moves made, FEN changed, or PGN tags present)
-      const isSuccessfullyLoaded = 
-        history.length > 0 || 
+      const isSuccessfullyLoaded =
+        history.length > 0 ||
         currentFenAfterLoad !== new Chess().fen() ||
         (Object.keys(headers).length > 0 && pgnString.toLowerCase().includes('[event '));
 
       if (!isSuccessfullyLoaded) {
-        setLastMoveStatus("Failed to load PGN. Invalid PGN or empty game.");
+        setLastMoveStatus(`Failed to load PGN from ${source}. Invalid PGN or empty game.`);
         return;
       }
-      
+
       const lastMoveVerbose = history.length > 0 ? history[history.length - 1] : null;
       const lastMoveSan = lastMoveVerbose ? (lastMoveVerbose as Move).san : 'Start of PGN';
 
-      setLastMoveStatus(`PGN loaded. Last move: ${lastMoveSan}`); 
-      // Update the game state specifically for the 'pgn' tab
+      setLastMoveStatus(`PGN loaded. Last move: ${lastMoveSan}`);
       setTabGameStates(prevStates => ({
         ...prevStates,
         pgn: { instance: newChessInstance, fen: currentFenAfterLoad },
-      }));                 
-      setPgnInput(""); // Clear the PGN text area
-      if(fileInputRef.current) fileInputRef.current.value = ""; // Clear the file input
-      // Optionally, you could switch to the PGN tab automatically here:
-      // setActiveTab('pgn'); 
+      }));
+      setPgnInput("");
+      setUploadedFileContent(null);
+      setUploadedFileName(null);
+      if(fileInputRef.current) fileInputRef.current.value = "";
+      setActiveTab('pgn');
     } catch (error: any) {
-      console.error("Error loading PGN:", error);
+      console.error(`Error loading PGN from ${source}:`, error);
       setLastMoveStatus(`Error loading PGN: ${error.message || 'Invalid format'}`);
     }
   };
-  
-  // Handler for file input change
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (e) => { loadPgn(e.target?.result as string ?? ""); };
-      reader.onerror = () => setLastMoveStatus("Error reading file.");
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        setUploadedFileContent(text ?? null);
+        setUploadedFileName(file.name);
+        setLastMoveStatus(`File "${file.name}" selected. Ready to load.`);
+      };
+      reader.onerror = () => {
+        setLastMoveStatus("Error reading file.");
+        setUploadedFileContent(null);
+        setUploadedFileName(null);
+      };
       reader.readAsText(file);
+    } else {
+        setUploadedFileContent(null);
+        setUploadedFileName(null);
     }
   };
 
-  // Handler for PGN textarea input change
+  const handleLoadSelectedFile = () => {
+    if (uploadedFileContent) {
+      loadPgn(uploadedFileContent, 'file');
+    } else {
+      setLastMoveStatus("No file selected to load.");
+    }
+  };
+
   const handlePgnInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setPgnInput(event.target.value);
   };
 
-  // Handler for submitting PGN text from textarea
   const handleSubmitPgnText = () => {
-    loadPgn(pgnInput);
+    loadPgn(pgnInput, 'text');
   };
 
-  // Resets the board of the CURRENTLY ACTIVE tab to its initial state
   const resetBoard = () => {
+    setLastMoveStatus("");
     setTabGameStates(prevStates => ({
       ...prevStates,
-      [activeTab]: initialGameState(), // Reset the active tab
+      [activeTabInternal]: initialGameState(),
     }));
-    // If the PGN tab was active and reset, clear its specific inputs
-    if (activeTab === 'pgn') {
-        setPgnInput(""); 
+    if (activeTabInternal === 'pgn') {
+        setPgnInput("");
+        setUploadedFileContent(null);
+        setUploadedFileName(null);
         if (fileInputRef.current) { fileInputRef.current.value = ""; }
     }
   };
 
-  // Get evaluation data for the active tab's current FEN
-  const currentEvalDataForTab = info[currentFen]; 
-
-  // Helper to prepare data for the PrincipalVariationTable component
-  const getPvTableData = (): { 
-      pvString: string; 
-      initialTurn: 'white' | 'black'; 
-      fullMoveNumber: number; 
-  } | null => {
+  const currentEvalDataForTab = info[currentFen];
+  const getPvTableData = (): { pvString: string; initialTurn: 'white' | 'black'; fullMoveNumber: number; } | null => {
     if (!currentEvalDataForTab || !currentEvalDataForTab.pv) return null;
-    // Create a temporary board from the current FEN to get turn and move number context for the PV
-    const boardForPvContext = new Chess(currentFen); 
+    const boardForPvContext = new Chess(currentFen);
     const turn: 'white' | 'black' = boardForPvContext.turn() === 'w' ? 'white' : 'black';
-    return { 
-      pvString: currentEvalDataForTab.pv, 
-      initialTurn: turn, 
-      fullMoveNumber: boardForPvContext.moveNumber() 
-    };
+    return { pvString: currentEvalDataForTab.pv, initialTurn: turn, fullMoveNumber: boardForPvContext.moveNumber() };
   };
   const pvTableData = getPvTableData();
-  
+
   // --- STYLES ---
-  const boardSize = '510px'; 
-  const evalBarWidth = '40px'; 
-  const pgnInputPanelWidth = '250px'; 
-  const infoPanelWidth = '300px'; 
-  const gapBetweenItems = '20px';
+  const boardSize = '511px';
+  const evalBarWidth = '40px';
+  const pgnInputPanelWidth = '300px';
+  const infoPanelWidth = '300px';
+
+  const pgnPanelRightMargin = '25px';
+  const evalBarBoardGap = '25px';
+  const boardAnalysisGap = '35px';
+
+  // SPACING WITHIN PGN PANEL:
+  const pgnTitleBottomMargin = '12px'; // Space after "Provide PGN" title
+  const pgnSectionVerticalMargin = '10px'; // Space around "OR" and between sections
+
+  const colors = {
+    backgroundMain: '#4A505A',
+    backgroundDarker: '#1E2229',
+    backgroundDarkMid: '#333942',
+    backgroundPgnSection: 'rgba(50, 55, 65, 0.85)',
+    backgroundInput: '#1c1f24',
+    textPrimary: '#f0f0f0',
+    textSecondary: '#c0c0c0',
+    accentBlue: '#007bff',
+    accentBlueDark: '#0056b3',
+    buttonLoadBackground: '#B0B8C8',
+    buttonLoadText: '#1E2229',
+    buttonLoadBackgroundHover: '#C8D0E0',
+    buttonLoadBackgroundDisabled: '#555B65',
+    buttonLoadTextDisabled: '#90959E',
+    accentRed: '#dc3545',
+    borderLight: '#5A606A',
+    borderDark: '#30343A',
+  };
 
   const appContainerStyle: React.CSSProperties = {
     display: 'flex', flexDirection: 'column', minHeight: '100vh',
-    backgroundColor: '#282c34', color: 'white',
+    backgroundColor: colors.backgroundMain, color: colors.textPrimary,
     fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
   };
   const titleBarStyle: React.CSSProperties = {
-    backgroundColor: '#20232a', padding: '15px 20px', textAlign: 'center',
+    backgroundColor: colors.backgroundDarker, padding: '15px 20px', textAlign: 'center',
     fontSize: '1.8em', fontWeight: 'bold', boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
     flexShrink: 0,
   };
-  const tabsControlAreaStyle: React.CSSProperties = { 
-    padding: '10px 20px', backgroundColor: '#252830', display: 'flex',
-    gap: '10px', alignItems: 'center', justifyContent: 'center', 
-    borderBottom: '1px solid #33373f', flexWrap: 'wrap',
+  const tabsControlAreaStyle: React.CSSProperties = {
+    padding: '10px 20px', backgroundColor: colors.backgroundDarkMid, display: 'flex',
+    gap: '10px', alignItems: 'center', justifyContent: 'center',
+    borderBottom: `1px solid ${colors.borderDark}`, flexWrap: 'wrap',
   };
   const tabButtonStyle: React.CSSProperties = {
     padding: '8px 15px', borderRadius: '4px', border: '1px solid transparent',
-    backgroundColor: 'transparent', color: '#ccc', cursor: 'pointer', fontWeight: '500',
+    backgroundColor: 'transparent', color: colors.textSecondary, cursor: 'pointer', fontWeight: '500',
     transition: 'background-color 0.2s, color 0.2s, border-color 0.2s',
   };
   const activeTabButtonStyle: React.CSSProperties = {
-    ...tabButtonStyle, backgroundColor: '#007bff', color: 'white', borderColor: '#0056b3',
+    ...tabButtonStyle, backgroundColor: colors.accentBlue, color: 'white', borderColor: colors.accentBlueDark,
   };
-  const pgnInputPanelStyle: React.CSSProperties = { 
-    width: pgnInputPanelWidth, display: 'flex', flexDirection: 'column', 
-    gap: '15px', padding: '15px', backgroundColor: 'rgba(40, 44, 52, 0.7)',
+
+  const pgnInputPanelOuterStyle: React.CSSProperties = {
+    width: pgnInputPanelWidth, display: 'flex', flexDirection: 'column',
+    padding: '15px',
+    backgroundColor: colors.backgroundDarker,
     borderRadius: '8px', height: boardSize, boxSizing: 'border-box', flexShrink: 0,
+    // MODIFIED: Removed 'gap' here. Spacing will be handled by margins on children.
+    marginRight: pgnPanelRightMargin,
   };
-  const fileInputStyle: React.CSSProperties = { color: '#ccc' };
-  const textAreaStyle: React.CSSProperties = { 
-    width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: '4px', 
-    border: '1px solid #444', backgroundColor: '#1e1e1e', color: 'white', 
-    fontFamily: 'monospace', minHeight: '120px', flexGrow: 1, 
+
+  const pgnSectionBoxStyle: React.CSSProperties = {
+    display: 'flex', flexDirection: 'column', gap: '8px',
+    padding: '10px',
+    backgroundColor: colors.backgroundPgnSection,
+    border: `1px solid ${colors.borderLight}`,
+    borderRadius: '6px',
+  };
+  const fileInputLabelStyle: React.CSSProperties = {
+    display: 'inline-block', padding: '10px 15px', backgroundColor: colors.accentBlue,
+    color: 'white', borderRadius: '4px', cursor: 'pointer', textAlign: 'center',
+    fontWeight: 'bold', transition: 'background-color 0.2s', alignSelf: 'stretch',
+  };
+  const fileInputStyle: React.CSSProperties = { display: 'none' };
+  const fileNameDisplayStyle: React.CSSProperties = {
+    fontSize: '0.85em', color: colors.textSecondary, marginTop: '5px', fontStyle: 'italic',
+    height: '20px', textAlign: 'center',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  };
+  const textAreaStyle: React.CSSProperties = {
+    width: '100%', boxSizing: 'border-box', padding: '8px', borderRadius: '4px',
+    border: `1px solid ${colors.borderLight}`, backgroundColor: colors.backgroundInput, color: 'white',
+    fontFamily: 'monospace',
+    flexBasis: '100px',
+    flexGrow: 1,
+    resize: 'none',
+    overflowY: 'auto',
   };
    const genericButtonStyle: React.CSSProperties = {
-    padding: '8px 15px', borderRadius: '4px', border: 'none', 
-    color: 'white', cursor: 'pointer', fontWeight: 'bold',
-    transition: 'background-color 0.2s',
+    padding: '10px 15px', borderRadius: '4px', border: 'none',
+    cursor: 'pointer', fontWeight: 'bold',
+    transition: 'background-color 0.2s, color 0.2s, opacity 0.2s', fontSize: '0.9em', width: '100%',
+    flexShrink: 0,
   };
-  const mainContentAreaStyle: React.CSSProperties = { 
+
+  const loadButtonStyleActive: React.CSSProperties = {
+    ...genericButtonStyle,
+    backgroundColor: colors.buttonLoadBackground,
+    color: colors.buttonLoadText,
+  };
+  const loadButtonStyleDisabled: React.CSSProperties = {
+    ...genericButtonStyle,
+    backgroundColor: colors.buttonLoadBackgroundDisabled,
+    color: colors.buttonLoadTextDisabled,
+    opacity: 0.7,
+    cursor: 'not-allowed',
+  };
+
+  const mainContentAreaStyle: React.CSSProperties = {
     textAlign: 'center', padding: '20px', flexGrow: 1, overflowY: 'auto',
   };
-  const contentLayoutStyle: React.CSSProperties = { 
-    display: "inline-flex", flexDirection: "row", gap: gapBetweenItems, 
+
+  const contentLayoutStyle: React.CSSProperties = {
+    display: "inline-flex", flexDirection: "row",
+    gap: evalBarBoardGap,
     alignItems: "flex-start",
   };
-  const evalBarWrapperStyle: React.CSSProperties = { display: 'flex', height: boardSize, flexShrink: 0 };
-  const boardWrapperStyle: React.CSSProperties = { 
-    width: boardSize, height: boardSize, boxShadow: '0 4px 12px rgba(0,0,0,0.25)', 
+
+  const evalBarWrapperStyle: React.CSSProperties = {
+    display: 'flex', height: boardSize, flexShrink: 0
+  };
+  const boardWrapperStyle: React.CSSProperties = {
+    width: boardSize, height: boardSize, boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
     borderRadius: '4px', flexShrink: 0,
+    marginRight: boardAnalysisGap,
   };
   const infoPanelStyle: React.CSSProperties = {
-    width: infoPanelWidth, padding: '15px', backgroundColor: 'rgba(40, 44, 52, 0.7)', 
+    width: infoPanelWidth, padding: '15px',
+    backgroundColor: colors.backgroundDarker,
     borderRadius: '8px', height: boardSize, display: 'flex', flexDirection: 'column',
     boxSizing: 'border-box', flexShrink: 0, textAlign: 'left',
   };
   const pvTableContainerStyle: React.CSSProperties = {
     flexGrow: 1, overflowY: 'auto', minHeight: '100px', textAlign: 'left',
   };
+  const panelHeaderStyle: React.CSSProperties = {
+    marginTop: 0, marginBottom: '0px',
+    color: colors.textPrimary, fontSize: '1.0em',
+    fontWeight: '600', borderBottom: `1px solid ${colors.borderLight}`, paddingBottom: '6px',
+    textAlign: 'left',
+  };
+
+  // MODIFIED: panelMainTitleStyle now includes specific marginBottom
+  const panelMainTitleStyle: React.CSSProperties = {
+    marginTop: 0,
+    marginBottom: pgnTitleBottomMargin, // Use the new variable for spacing
+    color: colors.textPrimary,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    fontSize: '1.2em',
+    borderBottom: `1px solid ${colors.borderDark}`,
+    paddingBottom: '8px',
+    flexShrink: 0,
+  };
+
+  // MODIFIED: orSeparatorStyle now includes specific marginY or marginTop/Bottom
+  const orSeparatorStyle: React.CSSProperties = {
+    textAlign: 'center', color: colors.textSecondary, fontWeight: 'bold',
+    margin: `${pgnSectionVerticalMargin} 0`, // Vertical margin, no horizontal
+    fontSize: '0.9em',
+    flexShrink: 0,
+  };
 
   return (
     <div style={appContainerStyle}>
       <header style={titleBarStyle}>Explain That Move</header>
 
-      {/* Tabs Control Area */}
-      <div style={tabsControlAreaStyle}> 
-        <button onClick={() => setActiveTab('start')} style={activeTab === 'start' ? activeTabButtonStyle : tabButtonStyle}>
+      <div style={tabsControlAreaStyle}>
+        <button onClick={() => setActiveTab('start')} style={activeTabInternal === 'start' ? activeTabButtonStyle : tabButtonStyle}>
           Starting Position
         </button>
-        <button onClick={() => setActiveTab('pgn')} style={activeTab === 'pgn' ? activeTabButtonStyle : tabButtonStyle}>
+        <button onClick={() => setActiveTab('pgn')} style={activeTabInternal === 'pgn' ? activeTabButtonStyle : tabButtonStyle}>
           Upload PGN
         </button>
-        <button onClick={() => setActiveTab('setup')} style={activeTab === 'setup' ? activeTabButtonStyle : tabButtonStyle}>
+        <button onClick={() => setActiveTab('setup')} style={activeTabInternal === 'setup' ? activeTabButtonStyle : tabButtonStyle}>
           Set Up Position
         </button>
       </div>
-      
-      {/* Main Content: PGN Input (conditional), Board, Eval, Info */}
-      <div style={mainContentAreaStyle}> 
-        <div style={contentLayoutStyle}> 
-          {/* Conditional PGN Input Panel on the Left */}
-          {activeTab === 'pgn' && (
-            <div style={pgnInputPanelStyle}>
-              <h4 style={{marginTop: 0, marginBottom: '10px', color: '#e0e0e0'}}>Load PGN</h4>
-              <label htmlFor="pgn-file-input" style={{cursor: 'pointer', color: '#007bff', textDecoration: 'underline', fontSize: '0.9em'}}>Select PGN File:</label>
-              <input 
-                id="pgn-file-input" type="file" accept=".pgn,.txt"
-                onChange={handleFileChange} ref={fileInputRef} style={fileInputStyle}
-              />
-              <label htmlFor="pgn-textarea" style={{fontSize: '0.9em', marginTop: '10px'}}>Or paste PGN:</label>
-              <textarea
-                id="pgn-textarea"
-                value={pgnInput} 
-                onChange={handlePgnInputChange} 
-                placeholder='[Event \"...\"]...'
-                style={textAreaStyle}
-              />
-              <button 
-                onClick={handleSubmitPgnText} 
-                style={{...genericButtonStyle, backgroundColor: '#28a745', width: '100%'}}
-              >
-                Load PGN Text 
-              </button>
+
+      <div style={mainContentAreaStyle}>
+        <div style={contentLayoutStyle}>
+          {activeTabInternal === 'pgn' && (
+            <div style={pgnInputPanelOuterStyle}> {/* Removed gap from here */}
+              <h4 style={panelMainTitleStyle}>Provide PGN</h4> {/* Has marginBottom */}
+
+              {/* "Upload File" section - no specific top margin needed if title's bottom margin is enough */}
+              <div style={{...pgnSectionBoxStyle, flexShrink: 0 }}>
+                <h5 style={panelHeaderStyle}>Upload File</h5>
+                <label htmlFor="pgn-file-input" style={fileInputLabelStyle}>
+                  Choose PGN File
+                </label>
+                <input
+                  id="pgn-file-input" type="file" accept=".pgn,.txt"
+                  onChange={handleFileSelect}
+                  ref={fileInputRef}
+                  style={fileInputStyle}
+                />
+                <div style={fileNameDisplayStyle}>
+                  {uploadedFileName ? `Selected: ${uploadedFileName}` : "No file selected."}
+                </div>
+                <button
+                  onClick={handleLoadSelectedFile}
+                  disabled={!uploadedFileContent}
+                  style={uploadedFileContent ? loadButtonStyleActive : loadButtonStyleDisabled}
+                  onMouseEnter={e => {
+                    if (uploadedFileContent) (e.currentTarget.style.backgroundColor = colors.buttonLoadBackgroundHover);
+                  }}
+                  onMouseLeave={e => {
+                    if (uploadedFileContent) (e.currentTarget.style.backgroundColor = colors.buttonLoadBackground);
+                  }}
+                >
+                  Load to Board
+                </button>
+              </div>
+
+              <div style={orSeparatorStyle}>OR</div> {/* Has margin Y */}
+
+              {/* "Paste Text" section - no specific top margin, relies on OR separator's bottom margin */}
+              <div style={{...pgnSectionBoxStyle, flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <h5 style={{...panelHeaderStyle, flexShrink: 0}}>Paste Text</h5>
+                <textarea
+                  id="pgn-textarea"
+                  value={pgnInput}
+                  onChange={handlePgnInputChange}
+                  placeholder='[Event \"Example\"]&#10;1. e4 e5 2. Nf3 Nc6 *'
+                  style={textAreaStyle}
+                />
+                <button
+                  onClick={handleSubmitPgnText}
+                  style={loadButtonStyleActive}
+                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = colors.buttonLoadBackgroundHover)}
+                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = colors.buttonLoadBackground)}
+                >
+                  Load to Board
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Placeholder for "Set Up Position" UI (can also be a left panel) */}
-          {activeTab === 'setup' && (
-            <div style={{ width: pgnInputPanelWidth, padding: '20px', textAlign: 'center', color: '#aaa', height: boardSize, display:'flex', alignItems:'center', justifyContent:'center', backgroundColor: 'rgba(40, 44, 52, 0.7)', borderRadius: '8px', boxSizing: 'border-box' }}>
+          {activeTabInternal === 'setup' && (
+            <div style={{
+                width: pgnInputPanelWidth,
+                marginRight: pgnPanelRightMargin,
+                padding: '20px', textAlign: 'center', color: colors.textSecondary, height: boardSize,
+                display:'flex', alignItems:'center', justifyContent:'center',
+                backgroundColor: colors.backgroundDarker, borderRadius: '8px', boxSizing: 'border-box'
+              }}>
               <p><em>"Set Up Position" <br/>UI will be here.</em></p>
             </div>
           )}
 
-          {/* EvalBar always visible next to PGN input or at the start */}
           <div style={evalBarWrapperStyle}>
-            {currentEvalDataForTab ? ( 
+            {currentEvalDataForTab ? (
               <EvalBar scoreCp={currentEvalDataForTab.score_cp} barHeight="100%" turnColor={getTurnColor()} />
             ) : (
               <div style={{ width: evalBarWidth, height: '100%', backgroundColor: 'rgba(128,128,128,0.1)' }}></div>
             )}
           </div>
 
-          {/* Chessboard always visible */}
           <div style={boardWrapperStyle}>
             <Chessground
-              fen={currentFen} 
-              key={activeTab} // IMPORTANT: Key to re-mount Chessground on tab switch
-              orientation="white" 
+              fen={currentFen}
+              key={activeTabInternal + "-" + currentFen}
+              orientation="white"
               turnColor={getTurnColor()}
-              movable={{ 
-                free: false, color: getTurnColor(), dests: calcDests(), 
+              movable={{
+                free: false, color: getTurnColor(), dests: calcDests(),
                 showDests: true, events: { after: handleMove }
               }}
             />
           </div>
 
-          {/* Info Panel always visible on the right */}
           <div style={infoPanelStyle}>
-            <h4 style={{ marginTop: '0px', marginBottom: '10px', color: '#e0e0e0', fontWeight: '600', borderBottom: '1px solid #444', paddingBottom: '8px' }}>Analysis</h4>
+            <h4 style={{ ...panelHeaderStyle, marginBottom: '10px' }}>Analysis</h4>
             <div style={pvTableContainerStyle}>
-              {currentEvalDataForTab && pvTableData ? ( 
-                <PrincipalVariationTable 
+              {currentEvalDataForTab && pvTableData ? (
+                <PrincipalVariationTable
                   pvString={pvTableData.pvString} initialTurn={pvTableData.initialTurn}
                   fullMoveNumber={pvTableData.fullMoveNumber}
                 />
-              ) : currentEvalDataForTab && currentEvalDataForTab.pv ? ( 
-                <p style={{ fontStyle: 'italic', color: '#aaa', marginTop: '10px' }}>PV: {currentEvalDataForTab.pv}</p> 
+              ) : currentEvalDataForTab && currentEvalDataForTab.pv ? (
+                <p style={{ fontStyle: 'italic', color: colors.textSecondary, marginTop: '10px' }}>PV: {currentEvalDataForTab.pv}</p>
               ) : ( <p>Loading evaluation...</p> )}
             </div>
             <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px' }}>{lastMoveStatus}</p>
-            <button 
-              onClick={resetBoard} 
-              style={{...genericButtonStyle, backgroundColor: '#dc3545', marginTop: 'auto', alignSelf: 'flex-end'}}
+            <button
+              onClick={resetBoard}
+              style={{...genericButtonStyle, backgroundColor: colors.accentRed, marginTop: 'auto', alignSelf: 'flex-end'}}
             >
               Reset Board
             </button>

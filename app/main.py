@@ -28,7 +28,7 @@ async def health():
 @app.get("/eval")
 async def eval_fen(
     fen: str = Query(..., description="Position in FEN notation"),
-    depth: int = Query(15, ge=1, le=30),
+    depth: int = Query(20, ge=1, le=30),
 ):
     # quick validation of FEN syntax
     try:
