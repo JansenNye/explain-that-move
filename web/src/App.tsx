@@ -77,9 +77,8 @@ export default function App() {
   const [isWhiteToMoveSetup, setIsWhiteToMoveSetup] = useState<boolean>(true);
   const [selectedPalettePieceCode, setSelectedPalettePieceCode] = useState<string | null>(null);
 
-  // State for board orientation and analysis depth
   const [boardOrientation, setBoardOrientation] = useState<BoardOrientation>('white');
-  const [analysisDepth, setAnalysisDepth] = useState<number>(20); // Default depth
+  const [analysisDepth, setAnalysisDepth] = useState<number>(20);
 
   const setActiveTab = useCallback((tab: ActiveTab) => {
     setLastMoveStatus("");
@@ -95,10 +94,9 @@ export default function App() {
     const currentFenForEffect = tabGameStates[activeTabInternal].fen;
     if (!currentFenForEffect || activeTabInternal === 'setup') {
         if (activeTabInternal === 'setup') {
-            // Clear info for the current FEN of the setup tab if it exists
             setInfo(prev => {
                 const newInfo = {...prev};
-                delete newInfo[currentFenForEffect]; // Or set to undefined
+                delete newInfo[currentFenForEffect];
                 return newInfo;
             });
         }
@@ -106,14 +104,14 @@ export default function App() {
     }
     
     const fetchEvalForFen = async (fenToEvaluate: string, depthToUse: number) => {
-      // setLastMoveStatus("Fetching evaluation..."); 
+      setLastMoveStatus("Fetching evaluation..."); 
       try {
         const { data } = await axios.get<EvalPayload>(
           `${import.meta.env.VITE_API_BASE}/eval`,
           { params: { fen: fenToEvaluate, depth: depthToUse } }
         );
         setInfo(prevInfo => ({ ...prevInfo, [fenToEvaluate]: data }));
-        // setLastMoveStatus(prev => prev === "Fetching evaluation..." ? "Evaluation complete." : prev);
+        setLastMoveStatus(prev => prev === "Fetching evaluation..." ? "Evaluation complete." : prev);
       } catch (err) {
         console.error(`[API_CALL] ❌ Error fetching evaluation for ${fenToEvaluate}:`, err);
         setLastMoveStatus("Error fetching evaluation.");
@@ -256,6 +254,10 @@ export default function App() {
     }
   }, [activeTabInternal, clearSetupBoard]);
 
+  // getTurnColor is no longer needed by EvalBar, but Chessground might still use it.
+  // If Chessground's turnColor prop is only for visual indication of whose pieces are active,
+  // and not for actual move turn (which chess.js handles via FEN), it might still be useful.
+  // For now, keeping it as it doesn't hurt.
   const getTurnColor = useCallback((): 'white' | 'black' => {
     if (activeTabInternal === 'setup') return isWhiteToMoveSetup ? 'white' : 'black';
     const currentBoardFen = tabGameStates[activeTabInternal].fen;
@@ -357,7 +359,12 @@ export default function App() {
 
           <div style={Styles.evalBarWrapperStyle}>
             {currentEvalDataForTab && activeTabInternal !== 'setup' ? (
-              <EvalBar scoreCp={currentEvalDataForTab.score_cp} barHeight="100%" turnColor={getTurnColor()} />
+              <EvalBar 
+                scoreCp={currentEvalDataForTab.score_cp} 
+                barHeight="100%" 
+                // turnColor={getTurnColor()} // REMOVED this prop as it's not in EvalBarProps
+                boardOrientation={boardOrientation} 
+              />
             ) : (
               <div style={{ width: Styles.EVAL_BAR_WIDTH, height: '100%', backgroundColor: activeTabInternal === 'setup' ? 'transparent' : 'rgba(128,128,128,0.1)' }} />
             )}
@@ -368,7 +375,7 @@ export default function App() {
               fen={activeTabInternal === 'setup' ? tabGameStates.setup.fen : currentActiveFen}
               key={activeTabInternal === 'setup' ? `setup-${tabGameStates.setup.fen}-${isWhiteToMoveSetup}` : `${activeTabInternal}-${currentActiveFen}-${boardOrientation}`}
               orientation={boardOrientation}
-              turnColor={getTurnColor()}
+              turnColor={getTurnColor()} // Chessground still uses this for piece interactivity
               movable={ activeTabInternal === 'setup' ? {
                 free: false, color: 'both', dests: calcDests(), showDests: true,
                 events: { drop: (orig: Square, dest: Square, piece: Piece) => { handleSetupPieceDrag(orig, dest); }},
@@ -389,7 +396,7 @@ export default function App() {
               {currentEvalDataForTab && pvTableData && activeTabInternal !== 'setup' ? (
                 <PrincipalVariationTable pvString={pvTableData.pvString} initialTurn={pvTableData.initialTurn} fullMoveNumber={pvTableData.fullMoveNumber} />
               ) : currentEvalDataForTab && currentEvalDataForTab.pv && activeTabInternal !== 'setup' ? (
-                 null // PV text fallback removed
+                 null 
               ) : ( activeTabInternal !== 'setup' ? <p>Loading evaluation...</p> : <p>Set up a position to analyze.</p> )}
             </div>
             <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px', flexShrink: 0 }}>{lastMoveStatus}</p>
