@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Chessground from "react-chessground";
 import "react-chessground/dist/styles/chessground.css";
 import { Chess, type Square, Move } from "chess.js";
@@ -20,14 +20,17 @@ interface EvalPayload {
 }
 
 export default function App() {
-  const [chessInstance] = useState(() => new Chess());
+  const [chessInstance, setChessInstance] = useState(() => new Chess());
   const [fen, setFen] = useState(() => chessInstance.fen());
   const [info, setInfo] = useState<Record<string, EvalPayload>>({});
   const [lastMoveStatus, setLastMoveStatus] = useState<string>("");
+  const [pgnInput, setPgnInput] = useState<string>(""); 
+  const fileInputRef = useRef<HTMLInputElement>(null); 
 
   useEffect(() => {
     if (!fen) return;
     const fetchEvalForFen = async (currentFen: string) => {
+      // ... (your existing fetchEvalForFen logic) ...
       try {
         const { data } = await axios.get<EvalPayload>(
           `${import.meta.env.VITE_API_BASE}/eval`,
@@ -39,43 +42,123 @@ export default function App() {
       }
     };
     fetchEvalForFen(fen);
-  }, [fen]);
+  }, [fen]); // Trigger eval when FEN changes
 
   const handleMove = useCallback((from: Square, to: Square) => {
     setLastMoveStatus("");
-    let moveResult: Move | null = null;
-    try {
-      moveResult = chessInstance.move({ from, to, promotion: "q" });
-      if (moveResult === null) {
-        setLastMoveStatus(`Invalid move: ${from}-${to}. Board may reset.`);
-        setFen(chessInstance.fen()); 
-      } else {
-        const newFen = chessInstance.fen();
-        setLastMoveStatus(`Move: ${moveResult.san}`);
-        setFen(newFen);
-      }
-    } catch (error) {
-      setLastMoveStatus(`Error making move: ${from}-${to}.`);
-      setFen(chessInstance.fen());
-    }
-  }, [chessInstance]);
+    // Use a new instance for the move operation to avoid mutating the shared one directly before confirmation
+    const currentBoard = new Chess(fen); // Load current FEN
+    const moveResult = currentBoard.move({ from, to, promotion: "q" });
 
-  const currentEvalData = info[fen];
-  const getTurnColor = useCallback(() => (chessInstance.turn() === "w" ? "white" : "black"), [chessInstance, fen]);
+    if (moveResult === null) {
+      setLastMoveStatus(`Invalid move: ${from}-${to}.`);
+      // No FEN change, board state remains. Chessground won't update from this.
+    } else {
+      const newFen = currentBoard.fen();
+      setLastMoveStatus(`Move: ${moveResult.san}`);
+      // Update the main chessInstance and FEN
+      setChessInstance(currentBoard); // The instance is now at the new position
+      setFen(newFen);
+    }
+  }, [fen]); // Depend on fen to get the correct starting point
+
+  const getTurnColor = useCallback(() => {
+    const tempBoard = new Chess(fen); // Always get turn from current FEN
+    return tempBoard.turn() === "w" ? "white" : "black";
+  }, [fen]);
 
   const calcDests = useCallback(() => {
+    const tempBoard = new Chess(fen); // Calculate dests based on current FEN
     const dests = new Map<Square, Square[]>();
     ALL_SQUARES_LIST.forEach(s => {
-      const piece = chessInstance.get(s);
-      if (piece && piece.color === chessInstance.turn()) {
-        const moves = chessInstance.moves({ square: s, verbose: true }) as Move[];
+      const piece = tempBoard.get(s);
+      if (piece && piece.color === tempBoard.turn()) {
+        const moves = tempBoard.moves({ square: s, verbose: true }) as Move[];
         if (moves.length > 0) {
           dests.set(s, moves.map(m => m.to));
         }
       }
     });
     return dests;
-  }, [chessInstance, fen]);
+  }, [fen]);
+
+  const loadPgn = (pgnString: string) => {
+    if (!pgnString.trim()) {
+      setLastMoveStatus("PGN input is empty.");
+      return;
+    }
+    try {
+      const newChessInstance = new Chess(); // Start with a fresh instance for PGN loading
+      const options: { sloppy?: boolean; newlineChar?: string } = { sloppy: true };
+      
+      // Call loadPgn but don't rely on its direct return value for the if check
+      // if TypeScript thinks it's void.
+      newChessInstance.loadPgn(pgnString, options); 
+
+      // Now, check the state of newChessInstance to determine success
+      const history = newChessInstance.history({ verbose: true });
+      const currentFenAfterLoad = newChessInstance.fen();
+      const headers = newChessInstance.header(); // Get headers for more context
+
+      // Check for successful load:
+      // 1. History has moves OR
+      // 2. FEN is different from the default starting FEN (could be a FEN setup in PGN)
+      // 3. Or at least some PGN headers were parsed.
+      const isSuccessfullyLoaded = 
+        history.length > 0 || 
+        currentFenAfterLoad !== new Chess().fen() || // Compare to a brand new instance's FEN
+        (Object.keys(headers).length > 0 && pgnString.toLowerCase().includes('[event ')); // Check for actual PGN tags
+
+      if (!isSuccessfullyLoaded) {
+        setLastMoveStatus("Failed to load PGN. Invalid PGN or empty game.");
+        console.error("PGN loading seemed to fail: history empty, FEN is default, or no significant headers.");
+        return;
+      }
+      
+      console.log("PGN Loaded. History:", history);
+      const lastMoveVerbose = history.length > 0 ? history[history.length - 1] : null;
+      const lastMoveSan = lastMoveVerbose ? (lastMoveVerbose as Move).san : 'Start of PGN'; // Type assertion for .san
+
+      setLastMoveStatus(`PGN loaded. Last move: ${lastMoveSan}`);
+      setChessInstance(newChessInstance); 
+      setFen(currentFenAfterLoad);                  
+      setPgnInput(""); 
+      if(fileInputRef.current) fileInputRef.current.value = ""; 
+
+    } catch (error: any) {
+      console.error("Error loading PGN:", error);
+      setLastMoveStatus(`Error loading PGN: ${error.message || 'Invalid format'}`);
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        if (text) {
+          loadPgn(text);
+        } else {
+          setLastMoveStatus("Failed to read file content.");
+        }
+      };
+      reader.onerror = () => {
+        setLastMoveStatus("Error reading file.");
+      }
+      reader.readAsText(file);
+    }
+  };
+
+  const handlePgnInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setPgnInput(event.target.value);
+  };
+
+  const handleSubmitPgnText = () => {
+    loadPgn(pgnInput);
+  };
+
+  const currentEvalData = info[fen];
 
   // Helper to get data for PrincipalVariationTable
   const getPvTableData = (): { 
@@ -120,28 +203,35 @@ export default function App() {
     flexShrink: 0,
   };
 
-  const mainContentAreaStyle: React.CSSProperties = { 
-    // display: 'flex',          // Make this a flex container
-    // justifyContent: 'center', // Center its child (contentLayoutStyle div) horizontally
-    // alignItems: 'flex-start', // Align its child to the top
-    textAlign: 'center',
-    padding: '20px',          
-    flexGrow: 1,              
-    overflowY: 'auto', // Keep scroll for vertical overflow
-    // overflowX: 'auto', // Optional: if the content group can be wider than viewport
+  const mainContentAreaStyle: React.CSSProperties = { textAlign: 'center', padding: '20px', flexGrow: 1, overflowY: 'auto' };
+  
+  const contentLayoutStyle: React.CSSProperties = { display: "inline-flex", flexDirection: "row", gap: "20px", alignItems: "flex-start" };
+  
+  const pgnInputAreaStyle: React.CSSProperties = {
+    padding: '15px 20px',
+    backgroundColor: '#20232a', // Match title bar or a slightly different shade
+    display: 'flex',
+    flexDirection: 'row', // Align items in a row
+    flexWrap: 'wrap',     // Allow items to wrap on smaller screens
+    gap: '15px',          // Space between input elements
+    alignItems: 'center', // Vertically align items nicely
+    justifyContent: 'center', // Center the group of PGN inputs
+    borderBottom: '1px solid #33373f', // Separator line
   };
 
-  const contentLayoutStyle: React.CSSProperties = { 
-    display: "inline-flex",      
-    flexDirection: "row", 
-    gap: gapBetweenItems, 
-    alignItems: "flex-start", 
-    // Remove 'margin: 0 auto' as the parent (mainContentAreaStyle) will handle centering
-    // We also don't necessarily need a maxWidth here if the parent is centering it correctly,
-    // but it can be good for very wide screens.
-    // maxWidth: `calc(${evalBarWidth} + ${gapBetweenItems} + ${boardSize} + ${gapBetweenItems} + ${infoPanelWidth})`,
+  const fileInputStyle: React.CSSProperties = { /* Basic styling if needed */ };
+
+  const textAreaStyle: React.CSSProperties = { 
+    minWidth: '300px', width: 'auto', flexGrow: 1, maxWidth: '500px',
+    padding: '8px', borderRadius: '4px', border: '1px solid #444', 
+    backgroundColor: '#1e1e1e', color: 'white', fontFamily: 'monospace', minHeight: '60px',
   };
   
+  const buttonStyle: React.CSSProperties = {
+    padding: '8px 15px', borderRadius: '4px', border: 'none', 
+    color: 'white', cursor: 'pointer', fontWeight: 'bold',
+  };
+
   const evalBarWrapperStyle: React.CSSProperties = {
     display: 'flex', 
     height: boardSize, 
@@ -176,15 +266,51 @@ export default function App() {
     textAlign: 'left',
   };
 
+
   return (
     <div style={appContainerStyle}>
       <header style={titleBarStyle}>
         Explain That Move
       </header>
 
-      {/* mainContentAreaStyle is now a flex container that will center its direct child */}
+      {/* PGN Input Section */}
+      <div style={pgnInputAreaStyle}>
+        <input 
+          type="file" 
+          accept=".pgn,.txt" // Accept .txt as well, as PGNs are often plain text
+          onChange={handleFileChange} 
+          ref={fileInputRef} 
+          style={fileInputStyle}
+        />
+        <textarea
+          value={pgnInput}
+          onChange={handlePgnInputChange}
+          placeholder="Or paste PGN here..."
+          rows={3} // Adjust as needed, or use CSS height
+          style={textAreaStyle}
+        />
+        <button 
+          onClick={handleSubmitPgnText} 
+          style={{...buttonStyle, backgroundColor: '#4CAF50' /* Green */}}
+        >
+          Load PGN Text
+        </button>
+        <button 
+          onClick={() => { 
+            const freshInstance = new Chess();
+            setChessInstance(freshInstance); // Update state
+            setFen(freshInstance.fen());
+            setLastMoveStatus("Board reset to initial position.");
+            setPgnInput("");
+            if(fileInputRef.current) fileInputRef.current.value = "";
+          }} 
+          style={{...buttonStyle, backgroundColor: '#f44336' /* Red */}}
+        >
+          Reset Board
+        </button>
+      </div>
+      
       <div style={mainContentAreaStyle}> 
-        {/* contentLayoutStyle div is the direct child that gets centered */}
         <div style={contentLayoutStyle}> 
           <div style={evalBarWrapperStyle}>
             {currentEvalData ? (
