@@ -22,6 +22,7 @@ interface EvalPayload {
 }
 
 type ActiveTab = 'start' | 'pgn' | 'setup';
+type BoardOrientation = 'white' | 'black'; 
 
 interface GameState {
   instance: Chess;
@@ -33,34 +34,22 @@ const initialGameState = (): GameState => {
   return { instance: newInstance, fen: newInstance.fen() };
 };
 
-// FIX: Refined FEN generation for setup to be more robust
 const generateFenForSetup = (boardInstance: Chess, isWhiteTurn: boolean): string => {
   const piecePlacement = boardInstance.fen().split(' ')[0];
   const turn = isWhiteTurn ? 'w' : 'b';
-  
-  // Determine castling rights based on current board state if possible,
-  // otherwise default to none ('-') for custom setups.
-  // This is a simplified approach; a full editor might have UI for castling rights.
   let castling = "";
-  // Check for White King and Rooks
   if (boardInstance.get('e1')?.type === 'k' && boardInstance.get('e1')?.color === 'w') {
     if (boardInstance.get('h1')?.type === 'r' && boardInstance.get('h1')?.color === 'w') castling += "K";
     if (boardInstance.get('a1')?.type === 'r' && boardInstance.get('a1')?.color === 'w') castling += "Q";
   }
-  // Check for Black King and Rooks
   if (boardInstance.get('e8')?.type === 'k' && boardInstance.get('e8')?.color === 'b') {
     if (boardInstance.get('h8')?.type === 'r' && boardInstance.get('h8')?.color === 'b') castling += "k";
     if (boardInstance.get('a8')?.type === 'r' && boardInstance.get('a8')?.color === 'b') castling += "q";
   }
   if (castling === "") castling = "-";
-
-
-  // En passant: chess.js doesn't directly expose the en passant square from a board state easily
-  // without it being the result of a move. For setup, default to '-'
   const enPassant = '-'; 
-  const halfMoves = 0; // Typically reset for a new setup
-  const fullMoves = 1; // Typically reset for a new setup
-
+  const halfMoves = 0;
+  const fullMoves = 1;
   return `${piecePlacement} ${turn} ${castling} ${enPassant} ${halfMoves} ${fullMoves}`;
 };
 
@@ -68,11 +57,9 @@ export default function App() {
   const [tabGameStates, setTabGameStates] = useState<Record<ActiveTab, GameState>>({
     start: initialGameState(),
     pgn: initialGameState(),
-    // FIX: Initialize setup tab with kings present
     setup: (() => {
       const initialSetupChess = new Chess();
-      initialSetupChess.clear(); // Start with an empty board
-      // Add kings to default positions to ensure FEN is valid for chess.js
+      initialSetupChess.clear();
       initialSetupChess.put({ type: 'k', color: 'w' }, 'e1');
       initialSetupChess.put({ type: 'k', color: 'b' }, 'e8');
       return { instance: initialSetupChess, fen: generateFenForSetup(initialSetupChess, true) };
@@ -80,7 +67,6 @@ export default function App() {
   });
 
   const [activeTabInternal, setActiveTabInternalState] = useState<ActiveTab>('start');
-
   const [info, setInfo] = useState<Record<string, EvalPayload>>({});
   const [lastMoveStatus, setLastMoveStatus] = useState<string>("");
   const [pgnInput, setPgnInput] = useState<string>("");
@@ -91,43 +77,56 @@ export default function App() {
   const [isWhiteToMoveSetup, setIsWhiteToMoveSetup] = useState<boolean>(true);
   const [selectedPalettePieceCode, setSelectedPalettePieceCode] = useState<string | null>(null);
 
+  // State for board orientation and analysis depth
+  const [boardOrientation, setBoardOrientation] = useState<BoardOrientation>('white');
+  const [analysisDepth, setAnalysisDepth] = useState<number>(20); // Default depth
+
   const setActiveTab = useCallback((tab: ActiveTab) => {
     setLastMoveStatus("");
     if (activeTabInternal === 'pgn' && tab !== 'pgn') {
-        setPgnInput("");
-        setUploadedFileContent(null);
-        setUploadedFileName(null);
+        setPgnInput(""); setUploadedFileContent(null); setUploadedFileName(null);
         if (fileInputRef.current) fileInputRef.current.value = "";
     }
-    if (tab !== 'setup') {
-        setSelectedPalettePieceCode(null);
-    }
+    if (tab !== 'setup') setSelectedPalettePieceCode(null);
     setActiveTabInternalState(tab);
   }, [activeTabInternal]);
 
   useEffect(() => {
     const currentFenForEffect = tabGameStates[activeTabInternal].fen;
-    if (!currentFenForEffect || activeTabInternal === 'setup') return;
-    const fetchEvalForFen = async (fenToEvaluate: string) => {
+    if (!currentFenForEffect || activeTabInternal === 'setup') {
+        if (activeTabInternal === 'setup') {
+            // Clear info for the current FEN of the setup tab if it exists
+            setInfo(prev => {
+                const newInfo = {...prev};
+                delete newInfo[currentFenForEffect]; // Or set to undefined
+                return newInfo;
+            });
+        }
+        return;
+    }
+    
+    const fetchEvalForFen = async (fenToEvaluate: string, depthToUse: number) => {
+      // setLastMoveStatus("Fetching evaluation..."); 
       try {
         const { data } = await axios.get<EvalPayload>(
           `${import.meta.env.VITE_API_BASE}/eval`,
-          { params: { fen: fenToEvaluate, depth: 12 } }
+          { params: { fen: fenToEvaluate, depth: depthToUse } }
         );
         setInfo(prevInfo => ({ ...prevInfo, [fenToEvaluate]: data }));
+        // setLastMoveStatus(prev => prev === "Fetching evaluation..." ? "Evaluation complete." : prev);
       } catch (err) {
         console.error(`[API_CALL] ❌ Error fetching evaluation for ${fenToEvaluate}:`, err);
+        setLastMoveStatus("Error fetching evaluation.");
       }
     };
-    fetchEvalForFen(currentFenForEffect);
-  }, [tabGameStates, activeTabInternal]);
+    fetchEvalForFen(currentFenForEffect, analysisDepth);
+  }, [tabGameStates, activeTabInternal, analysisDepth]);
 
   const handleMove = useCallback((from: Square, to: Square) => {
     setLastMoveStatus("");
     const currentBoardFen = tabGameStates[activeTabInternal].fen;
     const boardForMove = new Chess(currentBoardFen);
     const moveResult = boardForMove.move({ from, to, promotion: "q" });
-
     if (moveResult === null) {
       setLastMoveStatus(`Invalid move: ${from}-${to}.`);
     } else {
@@ -141,44 +140,23 @@ export default function App() {
   }, [activeTabInternal, tabGameStates]);
 
   const loadPgn = useCallback((pgnString: string, source: 'file' | 'text' = 'text') => {
-    if (!pgnString || !pgnString.trim()) {
-      setLastMoveStatus("PGN input is empty.");
-      return;
-    }
+    if (!pgnString || !pgnString.trim()) { setLastMoveStatus("PGN input is empty."); return; }
     try {
       const newChessInstance = new Chess();
       newChessInstance.loadPgn(pgnString, { newlineChar: '\n' });
-
       const history = newChessInstance.history({ verbose: true });
       const currentFenAfterLoad = newChessInstance.fen();
       const headers = newChessInstance.header();
-      const isSuccessfullyLoaded =
-        history.length > 0 ||
-        currentFenAfterLoad !== new Chess().fen() ||
-        (Object.keys(headers).length > 0 && pgnString.toLowerCase().includes('[event '));
-
-      if (!isSuccessfullyLoaded) {
-        setLastMoveStatus(`Failed to load PGN from ${source}. Invalid PGN or empty game.`);
-        return;
-      }
-      
+      const isSuccessfullyLoaded = history.length > 0 || currentFenAfterLoad !== new Chess().fen() || (Object.keys(headers).length > 0 && pgnString.toLowerCase().includes('[event '));
+      if (!isSuccessfullyLoaded) { setLastMoveStatus(`Failed to load PGN from ${source}. Invalid PGN or empty game.`); return; }
       const lastMoveVerbose = history.length > 0 ? history[history.length - 1] : null;
       const lastMoveSan = lastMoveVerbose ? (lastMoveVerbose as Move).san : 'Start of PGN';
-
       setLastMoveStatus(`PGN loaded. Last move: ${lastMoveSan}`);
-      setTabGameStates(prevStates => ({
-        ...prevStates,
-        pgn: { instance: newChessInstance, fen: currentFenAfterLoad },
-      }));
-      setPgnInput("");
-      setUploadedFileContent(null);
-      setUploadedFileName(null);
+      setTabGameStates(prevStates => ({ ...prevStates, pgn: { instance: newChessInstance, fen: currentFenAfterLoad } }));
+      setPgnInput(""); setUploadedFileContent(null); setUploadedFileName(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
       setActiveTab('pgn');
-    } catch (error: any) {
-      console.error(`Error loading PGN from ${source}:`, error);
-      setLastMoveStatus(`Error loading PGN: ${error.message || 'Invalid format'}`);
-    }
+    } catch (error: any) { console.error(`Error loading PGN from ${source}:`, error); setLastMoveStatus(`Error loading PGN: ${error.message || 'Invalid format'}`); }
   }, [setActiveTab]);
 
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -187,63 +165,36 @@ export default function App() {
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target?.result as string;
-        setUploadedFileContent(text ?? null);
-        setUploadedFileName(file.name);
+        setUploadedFileContent(text ?? null); setUploadedFileName(file.name);
         setLastMoveStatus(`File "${file.name}" selected. Ready to load.`);
       };
-      reader.onerror = () => {
-        setLastMoveStatus("Error reading file.");
-        setUploadedFileContent(null);
-        setUploadedFileName(null);
-      };
+      reader.onerror = () => { setLastMoveStatus("Error reading file."); setUploadedFileContent(null); setUploadedFileName(null); };
       reader.readAsText(file);
-    } else {
-        setUploadedFileContent(null);
-        setUploadedFileName(null);
-    }
+    } else { setUploadedFileContent(null); setUploadedFileName(null); }
   }, []);
 
   const handleLoadSelectedFile = useCallback(() => {
-    if (uploadedFileContent) {
-      loadPgn(uploadedFileContent, 'file');
-    } else {
-      setLastMoveStatus("No file selected to load.");
-    }
+    if (uploadedFileContent) loadPgn(uploadedFileContent, 'file');
+    else setLastMoveStatus("No file selected to load.");
   }, [uploadedFileContent, loadPgn]);
 
-  const handlePgnInputChange = useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setPgnInput(event.target.value);
-  }, []);
-
-  const handleSubmitPgnText = useCallback(() => {
-    loadPgn(pgnInput, 'text');
-  }, [pgnInput, loadPgn]);
+  const handlePgnInputChange = useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => setPgnInput(event.target.value), []);
+  const handleSubmitPgnText = useCallback(() => loadPgn(pgnInput, 'text'), [pgnInput, loadPgn]);
 
   const updateSetupBoardFen = useCallback((newBoardInstance: Chess, newTurn: boolean) => {
     const newFen = generateFenForSetup(newBoardInstance, newTurn);
-    // Ensure the instance being stored is also based on the new FEN
-    // to keep instance and FEN string in sync.
     try {
-        const validatedInstance = new Chess(newFen); // This will throw if FEN is truly bad
-        setTabGameStates(prev => ({
-            ...prev,
-            setup: { instance: validatedInstance, fen: newFen }
-        }));
+        const validatedInstance = new Chess(newFen);
+        setTabGameStates(prev => ({ ...prev, setup: { instance: validatedInstance, fen: newFen } }));
         setIsWhiteToMoveSetup(newTurn);
-    } catch (e) {
-        console.error("Error validating FEN during setup update:", newFen, e);
-        // Optionally, revert to a last known good FEN or show an error
-    }
-  }, []); // Removed setIsWhiteToMoveSetup from deps as it's a setter
-
-  const handlePalettePieceSelect = useCallback((pieceCode: string) => {
-    setSelectedPalettePieceCode(prev => prev === pieceCode ? null : pieceCode);
+    } catch (e) { console.error("Error validating FEN during setup update:", newFen, e); }
   }, []);
+
+  const handlePalettePieceSelect = useCallback((pieceCode: string) => setSelectedPalettePieceCode(prev => prev === pieceCode ? null : pieceCode), []);
 
   const handleSetupSquareInteract = useCallback((square: Square) => {
     const currentSetupFen = tabGameStates.setup.fen;
     const board = new Chess(currentSetupFen);
-
     if (selectedPalettePieceCode) {
       board.remove(square);
       if (selectedPalettePieceCode !== 'EMPTY') {
@@ -257,14 +208,11 @@ export default function App() {
 
   const handleSetupPieceDrag = useCallback((from: Square, to: Square) => {
     if (selectedPalettePieceCode) return;
-
     const currentSetupFen = tabGameStates.setup.fen;
     const board = new Chess(currentSetupFen);
     const pieceOnFrom = board.get(from);
-
     if (pieceOnFrom) {
-      board.remove(from);
-      board.remove(to); // Clear destination before putting
+      board.remove(from); board.remove(to);
       board.put({ type: pieceOnFrom.type, color: pieceOnFrom.color }, to);
       updateSetupBoardFen(board, isWhiteToMoveSetup);
     }
@@ -272,70 +220,44 @@ export default function App() {
 
   const toggleSetupTurn = useCallback(() => {
     const newTurn = !isWhiteToMoveSetup;
-    // Create a new Chess instance from the current FEN to pass to updateSetupBoardFen
-    // This ensures we're working with the board's current piece placement.
     updateSetupBoardFen(new Chess(tabGameStates.setup.fen), newTurn);
   }, [isWhiteToMoveSetup, tabGameStates.setup.fen, updateSetupBoardFen]);
 
-  // FIX: clearSetupBoard ensures kings are present
   const clearSetupBoard = useCallback(() => {
-    const newBoard = new Chess();
-    newBoard.clear();
-    // Add kings to default positions after clearing
-    newBoard.put({ type: 'k', color: 'w' }, 'e1');
-    newBoard.put({ type: 'k', color: 'b' }, 'e8');
-    updateSetupBoardFen(newBoard, true); // Default to White's turn
-    setSelectedPalettePieceCode(null);
+    const newBoard = new Chess(); newBoard.clear();
+    newBoard.put({ type: 'k', color: 'w' }, 'e1'); newBoard.put({ type: 'k', color: 'b' }, 'e8');
+    updateSetupBoardFen(newBoard, true); setSelectedPalettePieceCode(null);
   }, [updateSetupBoardFen]);
 
   const resetToStartingPositionSetup = useCallback(() => {
-    const newBoard = new Chess(); // Standard starting position
-    updateSetupBoardFen(newBoard, true);
-    setSelectedPalettePieceCode(null);
+    const newBoard = new Chess(); updateSetupBoardFen(newBoard, true); setSelectedPalettePieceCode(null);
   }, [updateSetupBoardFen]);
 
   const loadSetupPositionForAnalysis = useCallback(() => {
     const fenToLoad = tabGameStates.setup.fen;
     try {
       const analysisChess = new Chess(fenToLoad);
-      setTabGameStates(prev => ({
-        ...prev,
-        start: { instance: analysisChess, fen: fenToLoad }
-      }));
-      setActiveTab('start');
-      setLastMoveStatus(`Position loaded from setup for analysis.`);
-    } catch (e) {
-        setLastMoveStatus("Invalid FEN from setup. Cannot load for analysis.");
-        console.error("Invalid FEN from setup:", fenToLoad, e);
-    }
+      setTabGameStates(prev => ({ ...prev, start: { instance: analysisChess, fen: fenToLoad } }));
+      setActiveTab('start'); setLastMoveStatus(`Position loaded from setup for analysis.`);
+    } catch (e) { setLastMoveStatus("Invalid FEN from setup. Cannot load for analysis."); console.error("Invalid FEN from setup:", fenToLoad, e); }
   }, [tabGameStates.setup.fen, setActiveTab]);
 
   const resetBoard = useCallback(() => {
     setLastMoveStatus("");
-    const currentTabInitialState = initialGameState();
-    // For setup tab, ensure it resets to the specific setup initial state (empty with kings)
     if (activeTabInternal === 'setup') {
         clearSetupBoard();
     } else {
-        setTabGameStates(prevStates => ({
-            ...prevStates,
-            [activeTabInternal]: currentTabInitialState,
-        }));
+        const currentTabInitialState = initialGameState();
+        setTabGameStates(prevStates => ({ ...prevStates, [activeTabInternal]: currentTabInitialState }));
     }
-
     if (activeTabInternal === 'pgn') {
-        setPgnInput("");
-        setUploadedFileContent(null);
-        setUploadedFileName(null);
+        setPgnInput(""); setUploadedFileContent(null); setUploadedFileName(null);
         if (fileInputRef.current) { fileInputRef.current.value = ""; }
     }
   }, [activeTabInternal, clearSetupBoard]);
 
-
   const getTurnColor = useCallback((): 'white' | 'black' => {
-    if (activeTabInternal === 'setup') {
-      return isWhiteToMoveSetup ? 'white' : 'black';
-    }
+    if (activeTabInternal === 'setup') return isWhiteToMoveSetup ? 'white' : 'black';
     const currentBoardFen = tabGameStates[activeTabInternal].fen;
     const tempBoard = new Chess(currentBoardFen);
     return tempBoard.turn() === "w" ? "white" : "black";
@@ -345,11 +267,7 @@ export default function App() {
     if (activeTabInternal === 'setup') {
       const dests = new Map<Square, Square[]>();
       const boardInstance = new Chess(tabGameStates.setup.fen);
-      ALL_SQUARES_LIST.forEach(s => {
-        if (boardInstance.get(s)) {
-          dests.set(s, ALL_SQUARES_LIST.filter(sq => sq !== s));
-        }
-      });
+      ALL_SQUARES_LIST.forEach(s => { if (boardInstance.get(s)) dests.set(s, ALL_SQUARES_LIST.filter(sq => sq !== s)); });
       return dests;
     }
     const currentBoardFen = tabGameStates[activeTabInternal].fen;
@@ -359,23 +277,32 @@ export default function App() {
       const piece = tempBoard.get(s);
       if (piece && piece.color === tempBoard.turn()) {
         const moves = tempBoard.moves({ square: s, verbose: true }) as Move[];
-        if (moves.length > 0) { dests.set(s, moves.map(m => m.to)); }
+        if (moves.length > 0) dests.set(s, moves.map(m => m.to));
       }
     });
     return dests;
   }, [tabGameStates, activeTabInternal]);
 
+  const handleFlipBoard = useCallback(() => {
+    setBoardOrientation(prev => prev === 'white' ? 'black' : 'white');
+  }, []);
+
+  const handleDepthChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    let newDepth = parseInt(event.target.value, 10);
+    if (isNaN(newDepth)) newDepth = 20;
+    newDepth = Math.max(5, Math.min(25, newDepth));
+    setAnalysisDepth(newDepth);
+  }, []);
+
   const currentActiveGameState = tabGameStates[activeTabInternal];
   const currentActiveFen = currentActiveGameState.fen;
-
   const currentEvalDataForTab = info[currentActiveFen];
   const pvTableData = useMemo(() => {
     if (!currentEvalDataForTab || !currentEvalDataForTab.pv) return null;
-    const boardForPvContext = new Chess(currentActiveFen); // Use currentActiveFen
+    const boardForPvContext = new Chess(currentActiveFen);
     const turn: 'white' | 'black' = boardForPvContext.turn() === 'w' ? 'white' : 'black';
     return { pvString: currentEvalDataForTab.pv, initialTurn: turn, fullMoveNumber: boardForPvContext.moveNumber() };
   }, [currentEvalDataForTab, currentActiveFen]);
-
 
   return (
     <div style={Styles.appContainerStyle}>
@@ -396,26 +323,13 @@ export default function App() {
                 <label htmlFor="pgn-file-input" style={Styles.fileInputLabelStyle}>Choose PGN File</label>
                 <input id="pgn-file-input" type="file" accept=".pgn,.txt" onChange={handleFileSelect} ref={fileInputRef} style={Styles.fileInputStyle} />
                 <div style={Styles.fileNameDisplayStyle}>{uploadedFileName ? `Selected: ${uploadedFileName}` : "No file selected."}</div>
-                <button 
-                  onClick={handleLoadSelectedFile} 
-                  disabled={!uploadedFileContent} 
-                  style={uploadedFileContent ? Styles.loadButtonStyleActive : Styles.loadButtonStyleDisabled} 
-                  onMouseEnter={e => { if (uploadedFileContent) (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackgroundHover);}} 
-                  onMouseLeave={e => { if (uploadedFileContent) (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackground);}}>
-                  Load to Board
-                </button>
+                <button onClick={handleLoadSelectedFile} disabled={!uploadedFileContent} style={uploadedFileContent ? Styles.loadButtonStyleActive : Styles.loadButtonStyleDisabled} onMouseEnter={e => { if (uploadedFileContent) (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackgroundHover);}} onMouseLeave={e => { if (uploadedFileContent) (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackground);}}>Load to Board</button>
               </div>
               <div style={Styles.orSeparatorStyle}>OR</div>
               <div style={{...Styles.pgnSectionBoxStyle, flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 <h5 style={{...Styles.panelHeaderStyle, flexShrink: 0}}>Paste Text</h5>
                 <textarea id="pgn-textarea" value={pgnInput} onChange={handlePgnInputChange} placeholder='[Event \"Example\"]&#10;1. e4 e5 2. Nf3 Nc6 *' style={Styles.textAreaStyle} />
-                <button 
-                  onClick={handleSubmitPgnText} 
-                  style={Styles.loadButtonStyleActive} 
-                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackgroundHover)} 
-                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackground)}>
-                  Load to Board
-                </button>
+                <button onClick={handleSubmitPgnText} style={Styles.loadButtonStyleActive} onMouseEnter={e => (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackgroundHover)} onMouseLeave={e => (e.currentTarget.style.backgroundColor = Styles.COLORS.buttonLoadBackground)}>Load to Board</button>
               </div>
             </div>
           )}
@@ -425,10 +339,7 @@ export default function App() {
               <div>
                 <h4 style={{...Styles.panelMainTitleStyle, marginBottom: '15px'}}>Set Up Position</h4>
                 <div style={Styles.piecePaletteContainerStyle}>
-                  <PiecePalette
-                    onSelectPiece={handlePalettePieceSelect}
-                    selectedPiece={selectedPalettePieceCode} 
-                  />
+                  <PiecePalette onSelectPiece={handlePalettePieceSelect} selectedPiece={selectedPalettePieceCode} />
                 </div>
               </div>
               <div style={Styles.setupControlsContainerStyle}>
@@ -437,9 +348,9 @@ export default function App() {
                   <span style={{color: Styles.COLORS.textSecondary}}>|</span>
                   <span onClick={toggleSetupTurn} style={!isWhiteToMoveSetup ? Styles.turnSwitchActiveLabelStyle : Styles.turnSwitchLabelStyle}>Black to move</span>
                 </div>
-                <button onClick={clearSetupBoard} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentBlueDark }}>Clear Board</button>
-                <button onClick={resetToStartingPositionSetup} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentBlueDark }}>Starting Position</button>
-                <button onClick={loadSetupPositionForAnalysis} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentGreen }}>Load for Analysis</button>
+                <button onClick={clearSetupBoard} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentBlueDark, width: '100%' }}>Clear Board</button>
+                <button onClick={resetToStartingPositionSetup} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentBlueDark, width: '100%' }}>Starting Position</button>
+                <button onClick={loadSetupPositionForAnalysis} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentGreen, width: '100%' }}>Load for Analysis</button>
               </div>
             </div>
           )}
@@ -455,30 +366,19 @@ export default function App() {
           <div style={Styles.boardWrapperStyle}>
             <Chessground
               fen={activeTabInternal === 'setup' ? tabGameStates.setup.fen : currentActiveFen}
-              key={activeTabInternal === 'setup' ? `setup-${tabGameStates.setup.fen}-${isWhiteToMoveSetup}` : `${activeTabInternal}-${currentActiveFen}`}
-              orientation="white"
+              key={activeTabInternal === 'setup' ? `setup-${tabGameStates.setup.fen}-${isWhiteToMoveSetup}` : `${activeTabInternal}-${currentActiveFen}-${boardOrientation}`}
+              orientation={boardOrientation}
               turnColor={getTurnColor()}
               movable={ activeTabInternal === 'setup' ? {
-                free: false,
-                color: 'both',
-                dests: calcDests(),
-                showDests: true,
-                events: {
-                  drop: (orig: Square, dest: Square, piece: Piece) => { handleSetupPieceDrag(orig, dest); }
-                },
+                free: false, color: 'both', dests: calcDests(), showDests: true,
+                events: { drop: (orig: Square, dest: Square, piece: Piece) => { handleSetupPieceDrag(orig, dest); }},
                 rookCastle: false,
               } : {
-                free: false,
-                color: getTurnColor(),
-                dests: calcDests(),
-                showDests: true,
+                free: false, color: getTurnColor(), dests: calcDests(), showDests: true,
                 events: { after: handleMove }
               }}
               onSelect={ activeTabInternal === 'setup' ? (square: Square) => handleSetupSquareInteract(square) : undefined }
-              highlight={{
-                lastMove: activeTabInternal === 'setup' ? false : true,
-                check: activeTabInternal === 'setup' ? false : true,
-              }}
+              highlight={{ lastMove: activeTabInternal === 'setup' ? false : true, check: activeTabInternal === 'setup' ? false : true }}
               premovable={{ enabled: activeTabInternal === 'setup' ? false : true }}
             />
           </div>
@@ -489,11 +389,39 @@ export default function App() {
               {currentEvalDataForTab && pvTableData && activeTabInternal !== 'setup' ? (
                 <PrincipalVariationTable pvString={pvTableData.pvString} initialTurn={pvTableData.initialTurn} fullMoveNumber={pvTableData.fullMoveNumber} />
               ) : currentEvalDataForTab && currentEvalDataForTab.pv && activeTabInternal !== 'setup' ? (
-                <p style={{ fontStyle: 'italic', color: Styles.COLORS.textSecondary, marginTop: '10px' }}>PV: {currentEvalDataForTab.pv}</p>
+                 null // PV text fallback removed
               ) : ( activeTabInternal !== 'setup' ? <p>Loading evaluation...</p> : <p>Set up a position to analyze.</p> )}
             </div>
-            <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px' }}>{lastMoveStatus}</p>
-            <button onClick={resetBoard} style={{...Styles.genericButtonStyle, backgroundColor: Styles.COLORS.accentRed, marginTop: 'auto', alignSelf: 'flex-end'}}>Reset Board</button>
+            <p style={{ fontSize: "0.9em", minHeight: "1.2em", marginTop: '10px', flexShrink: 0 }}>{lastMoveStatus}</p>
+            
+            <div style={Styles.analysisControlsContainerStyle}>
+              <div style={Styles.depthControlStyle}>
+                <label htmlFor="analysis-depth" style={{color: Styles.COLORS.textSecondary, fontSize: '0.9em'}}>Analysis Depth:</label>
+                <input
+                  type="number"
+                  id="analysis-depth"
+                  value={analysisDepth}
+                  onChange={handleDepthChange}
+                  min="5"
+                  max="25"
+                  style={Styles.depthInputStyle}
+                />
+              </div>
+              <div style={Styles.analysisButtonRowStyle}>
+                <button 
+                  onClick={handleFlipBoard} 
+                  style={{...Styles.analysisButtonStyle, backgroundColor: Styles.COLORS.accentSecondary}}
+                >
+                  Flip Board
+                </button>
+                <button 
+                  onClick={resetBoard} 
+                  style={{...Styles.analysisButtonStyle, backgroundColor: Styles.COLORS.accentRed}}
+                >
+                  Reset Board
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

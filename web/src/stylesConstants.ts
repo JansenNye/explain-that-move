@@ -25,6 +25,7 @@ export const COLORS = {
   textSecondary: '#c0c0c0',
   accentBlue: '#007bff',
   accentBlueDark: '#0056b3',
+  accentSecondary: '#6c757d', 
   buttonLoadBackground: '#B0B8C8',
   buttonLoadText: '#1E2229',
   buttonLoadBackgroundHover: '#C8D0E0',
@@ -161,7 +162,7 @@ export const genericButtonStyle: React.CSSProperties = {
   fontWeight: 'bold',
   transition: 'background-color 0.2s, color 0.2s, opacity 0.2s',
   fontSize: '0.9em',
-  width: '100%',
+  // width: '100%', // MODIFIED: Removed default full width
   flexShrink: 0,
 };
 
@@ -169,6 +170,7 @@ export const loadButtonStyleActive: React.CSSProperties = {
   ...genericButtonStyle,
   backgroundColor: COLORS.buttonLoadBackground,
   color: COLORS.buttonLoadText,
+  width: '100%', // Explicitly set full width for these buttons
 };
 
 export const loadButtonStyleDisabled: React.CSSProperties = {
@@ -177,6 +179,7 @@ export const loadButtonStyleDisabled: React.CSSProperties = {
   color: COLORS.buttonLoadTextDisabled,
   opacity: 0.7,
   cursor: 'not-allowed',
+  width: '100%', // Explicitly set full width for these buttons
 };
 
 export const mainContentAreaStyle: React.CSSProperties = {
@@ -215,17 +218,18 @@ export const infoPanelStyle: React.CSSProperties = {
   borderRadius: '8px',
   height: BOARD_SIZE,
   display: 'flex',
-  flexDirection: 'column',
+  flexDirection: 'column', 
   boxSizing: 'border-box',
   flexShrink: 0,
   textAlign: 'left',
 };
 
 export const pvTableContainerStyle: React.CSSProperties = {
-  flexGrow: 1,
+  flexGrow: 1, 
   overflowY: 'auto',
-  minHeight: '100px',
+  minHeight: '100px', 
   textAlign: 'left',
+  marginBottom: '15px', 
 };
 
 export const panelHeaderStyle: React.CSSProperties = {
@@ -260,7 +264,6 @@ export const orSeparatorStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
-// Styles for Setup Position UI
 export const setupPanelOuterStyle: React.CSSProperties = {
   width: PGN_PANEL_WIDTH,
   display: 'flex',
@@ -310,4 +313,44 @@ export const turnSwitchActiveLabelStyle: React.CSSProperties = {
   ...turnSwitchLabelStyle,
   fontWeight: 'bold',
   color: COLORS.textPrimary,
+};
+
+export const analysisControlsContainerStyle: React.CSSProperties = {
+  marginTop: 'auto', 
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '15px', 
+};
+
+export const depthControlStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '10px',
+  padding: '8px',
+  backgroundColor: COLORS.backgroundInput,
+  borderRadius: '4px',
+  border: `1px solid ${COLORS.borderLight}`,
+};
+
+export const depthInputStyle: React.CSSProperties = {
+  width: '60px',
+  padding: '5px 8px',
+  backgroundColor: COLORS.backgroundDarker, 
+  color: COLORS.textPrimary,
+  border: `1px solid ${COLORS.borderDark}`,
+  borderRadius: '4px',
+  textAlign: 'center',
+  fontSize: '0.9em',
+};
+
+export const analysisButtonRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: '10px', 
+  justifyContent: 'space-between', 
+};
+
+export const analysisButtonStyle: React.CSSProperties = { 
+  ...genericButtonStyle, 
+  flexGrow: 1, // Allow buttons to grow equally
+  // width is not set to 100% here, flexGrow will handle distribution
 };
